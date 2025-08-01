@@ -487,7 +487,7 @@ pub(crate) fn run_scope(
 // INTERNAL FUNCTIONS
 //==============================================================================
 
-fn get_current_scope() -> Option<usize> {
+pub(crate) fn get_current_scope() -> Option<usize> {
     *CURRENT_SCOPE.lock()
 }
 
