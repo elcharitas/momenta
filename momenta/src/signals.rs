@@ -426,6 +426,9 @@ where
         }
     }
 
+    // Note: We don't automatically add the creating scope as a dependent
+    // Dependencies are only established when the signal is actually read via .with() or .get()
+
     signal
 }
 
@@ -527,18 +530,37 @@ impl Drop for ScopeGuard {
     }
 }
 
+fn scope_has_signal_changes(scope_id: usize) -> bool {
+    // Return true for initial render (when scope has no dependencies yet)
+    let has_dependencies = SCOPE_DEPENDENCIES.lock().contains_key(&scope_id);
+    if !has_dependencies {
+        return true;
+    }
+
+    SIGNAL_DEPENDENCIES
+        .lock()
+        .iter()
+        .any(|(&(_, _), scopes)| scopes.contains(&scope_id))
+}
+
 fn render_scope(scope_id: usize) -> Node {
     let _guard = ScopeGuard {
         previous_scope: get_current_scope(),
     };
+
     set_current_scope(Some(scope_id));
+
+    if !scope_has_signal_changes(scope_id) {
+        return Node::Empty;
+    }
 
     let (should_clear_deps, was_rendering) = {
         let mut rendering_flag = RENDERING_SCOPE.lock();
         let mut changes = SCOPE_SIGNAL_CHANGES.lock();
         let was_rendering = *rendering_flag;
         *rendering_flag = scope_id;
-        changes.clear();
+        // clear scope signals
+        changes.retain(|&(scope, _)| scope != scope_id);
         (was_rendering == 0, was_rendering)
     };
 
@@ -604,7 +626,13 @@ fn render_scope(scope_id: usize) -> Node {
             let signal_deps = SIGNAL_DEPENDENCIES.lock();
             for signal_id in changes {
                 if let Some(dependent_scopes) = signal_deps.get(&signal_id) {
-                    pending.extend(dependent_scopes.clone());
+                    // Only add scopes that are different from the current scope
+                    // This ensures the scope that triggered the change doesn't re-render itself
+                    for &dependent_scope in dependent_scopes {
+                        if dependent_scope != scope_id {
+                            pending.insert(dependent_scope);
+                        }
+                    }
                 }
             }
         }
