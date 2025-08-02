@@ -27,15 +27,15 @@ fn parse_attribute_name(input: ParseStream) -> Result<(Ident, Span)> {
 
     // Try to parse as regular identifier first
     if let Ok(ident) = input.parse::<Ident>() {
-        // Check if this is an "on" identifier followed by a colon
-        if ident == "on" && input.peek(Token![:]) {
+        // Check for prefixed attributes (on:, data:)
+        if (ident == "on" || ident == "data") && input.peek(Token![:]) {
             input.parse::<Token![:]>()?;
-            let event_ident = input.parse::<Ident>()?;
-            let event_name = event_ident.to_string();
-            let end_span = event_ident.span();
+            let suffix_ident = input.parse::<Ident>()?;
+            let suffix_name = suffix_ident.to_string();
+            let end_span = suffix_ident.span();
             let combined_span = start_span.join(end_span).unwrap_or(end_span);
             return Ok((
-                Ident::new(&format!("on_{}", event_name), combined_span),
+                Ident::new(&format!("{}_{}", ident, suffix_name), combined_span),
                 combined_span,
             ));
         }
