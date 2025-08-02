@@ -250,11 +250,21 @@ where
         move |node| {
             #[cfg(feature = "wasm")]
             if let Node::Element(el) = node {
-                if let Some(element) =
+                if let Some(existing_el) =
                     element_cache::with_cache(|cache| cache.get(el.key()).cloned())
                 {
-                    if let Some(parent) = element.parent_element() {
-                        parent.remove_child(&element).ok();
+                    // Check if element content has actually changed
+                    if existing_el.tag_name().to_lowercase() == el.tag()
+                        && existing_el.inner_html() == *el.html()
+                        && el.attributes().iter().all(|(name, value)| {
+                            existing_el.get_attribute(name).as_deref() == Some(value)
+                        })
+                    {
+                        return; // Skip re-render if nothing changed
+                    }
+
+                    if let Some(parent) = existing_el.parent_element() {
+                        parent.remove_child(&existing_el).ok();
                         el.render(&parent);
                     }
                 }
