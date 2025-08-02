@@ -147,37 +147,22 @@ impl<T> Clone for Signal<T> {
     }
 }
 
-impl<T: SignalValue + PartialEq + Clone + core::ops::Add<Output = T> + 'static> AddAssign<T>
-    for Signal<T>
-{
-    fn add_assign(&mut self, rhs: T) {
-        self.set(self.get() + rhs);
-    }
+macro_rules! impl_assign_ops {
+    ($($trait:ident, $op:ident, $method:ident, $assign_method:ident),*) => {
+        $(
+            impl<T: SignalValue + PartialEq + Clone + core::ops::$trait<Output = T> + 'static> $method<T> for Signal<T> {
+                fn $assign_method(&mut self, rhs: T) {
+                    self.set(self.get().$op(rhs));
+                }
+            }
+        )*
+    };
 }
 
-impl<T: SignalValue + PartialEq + Clone + core::ops::Sub<Output = T> + 'static> SubAssign<T>
-    for Signal<T>
-{
-    fn sub_assign(&mut self, rhs: T) {
-        self.set(self.get() - rhs);
-    }
-}
-
-impl<T: SignalValue + PartialEq + Clone + core::ops::Mul<Output = T> + 'static> MulAssign<T>
-    for Signal<T>
-{
-    fn mul_assign(&mut self, rhs: T) {
-        self.set(self.get() * rhs);
-    }
-}
-
-impl<T: SignalValue + PartialEq + Clone + core::ops::Div<Output = T> + 'static> DivAssign<T>
-    for Signal<T>
-{
-    fn div_assign(&mut self, rhs: T) {
-        self.set(self.get() / rhs);
-    }
-}
+impl_assign_ops!(
+    Add, add, AddAssign, add_assign, Sub, sub, SubAssign, sub_assign, Mul, mul, MulAssign,
+    mul_assign, Div, div, DivAssign, div_assign
+);
 
 impl<T: SignalValue + PartialEq + 'static> PartialEq<T> for Signal<T> {
     fn eq(&self, other: &T) -> bool {
@@ -621,23 +606,21 @@ fn render_scope(scope_id: usize) -> Node {
     };
 
     if let Some(changes) = signal_changes {
-        {
-            let mut pending = PENDING_SCOPE_RENDERS.lock();
-            let signal_deps = SIGNAL_DEPENDENCIES.lock();
-            for signal_id in changes {
-                if let Some(dependent_scopes) = signal_deps.get(&signal_id) {
-                    // Only add scopes that are different from the current scope
-                    // This ensures the scope that triggered the change doesn't re-render itself
-                    for &dependent_scope in dependent_scopes {
-                        if dependent_scope != scope_id {
-                            pending.insert(dependent_scope);
-                        }
+        let mut pending = PENDING_SCOPE_RENDERS.lock();
+        let signal_deps = SIGNAL_DEPENDENCIES.lock();
+        for signal_id in changes {
+            if let Some(dependent_scopes) = signal_deps.get(&signal_id) {
+                for &dependent_scope in dependent_scopes {
+                    if dependent_scope != scope_id {
+                        pending.insert(dependent_scope);
                     }
                 }
             }
         }
-
+        
         if was_rendering == 0 {
+            drop(pending);
+            drop(signal_deps);
             process_pending_renders();
         }
     }
@@ -654,23 +637,11 @@ fn run_scope_effects(scope_id: usize) {
 }
 
 fn process_pending_renders() {
-    loop {
-        let scope_to_render = {
-            let mut pending = PENDING_SCOPE_RENDERS.lock();
-            if pending.is_empty() {
-                None
-            } else {
-                pending.iter().next().copied().map(|scope_id| {
-                    pending.remove(&scope_id);
-                    scope_id
-                })
-            }
-        };
-
-        match scope_to_render {
-            Some(scope_id) => render_scope(scope_id),
-            None => break,
-        };
+    while let Some(scope_id) = {
+        let mut pending = PENDING_SCOPE_RENDERS.lock();
+        pending.iter().next().copied().map(|id| { pending.remove(&id); id })
+    } {
+        render_scope(scope_id);
     }
 }
 
