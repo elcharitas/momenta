@@ -1265,6 +1265,16 @@ pub mod elements {
             crossorigin: String,
             /// The referrerpolicy attribute specifies the referrer policy for the linked resource
             referrerpolicy: String,
+            /// The media query for the linked resource
+            media: String,
+            /// The language of the linked resource
+            hreflang: String,
+            /// The size of the linked resource (for icons)
+            sizes: String,
+            /// The integrity hash for the linked resource
+            integrity: String,
+            /// Whether the link should be preloaded
+            r#as: String,
         }
         /// HTML `<div>` element - Container element for grouping and styling content
         ///
@@ -1406,6 +1416,22 @@ pub mod elements {
             /// The loading attribute indicates how the browser should load the image
             /// Example: loading="lazy" (defers loading until it's near viewport)
             loading: String,
+            /// The crossorigin attribute sets the mode of the request to an HTTP CORS Request
+            crossorigin: String,
+            /// The decoding attribute provides an image decoding hint to the browser
+            decoding: String,
+            /// The fetchpriority attribute provides a hint of the relative priority to use when fetching the image
+            fetchpriority: String,
+            /// The ismap attribute indicates that the image is part of a server-side image map
+            ismap: Option<bool>,
+            /// The referrerpolicy attribute specifies which referrer to use when fetching the resource
+            referrerpolicy: String,
+            /// The sizes attribute defines the sizes of the image for different page layouts
+            sizes: String,
+            /// The srcset attribute defines the set of images we will allow the browser to choose between
+            srcset: String,
+            /// The usemap attribute specifies an image as a client-side image map
+            usemap: String,
         }
 
         /// HTML `<br>` element - Produces a line break in text
@@ -1477,6 +1503,15 @@ pub mod elements {
             /// The cellspacing attribute specifies the space between cells
             /// Example: cellspacing="2" (2 pixels between cells)
             cellspacing: i32,
+            /// The summary attribute provides a summary of the table content
+            /// Example: summary="Sales data for Q1 2023"
+            summary: String,
+            /// The frame attribute specifies which parts of the outer borders should be displayed
+            /// Example: frame="box" (display all borders)
+            frame: String,
+            /// The rules attribute specifies which parts of the inner borders should be displayed
+            /// Example: rules="all" (display all inner borders)
+            rules: String,
         }
 
         /// HTML `<tr>` element - Table row container
@@ -1639,6 +1674,58 @@ pub mod elements {
             ///
             /// Example: autocomplete="current-password"
             autocomplete: String,
+            /// The step attribute specifies the legal number intervals for number inputs
+            ///
+            /// Example: step="0.01" (allows decimal values)
+            step: String,
+            /// The maxlength attribute specifies maximum number of characters
+            ///
+            /// Example: maxlength="50" (limits input to 50 characters)
+            maxlength: Option<i32>,
+            /// The minlength attribute specifies minimum number of characters
+            ///
+            /// Example: minlength="8" (requires at least 8 characters)
+            minlength: Option<i32>,
+            /// The size attribute specifies the visible width of the input
+            ///
+            /// Example: size="20" (shows 20 characters wide)
+            size: Option<i32>,
+            /// The accept attribute specifies file types for file inputs
+            ///
+            /// Example: accept=".jpg,.png" (accepts image files)
+            accept: String,
+            /// The alt attribute provides alternative text for image inputs
+            ///
+            /// Example: alt="Submit button" (accessibility text)
+            alt: String,
+            /// The checked attribute specifies if checkbox/radio is selected
+            ///
+            /// Example: checked (input is pre-selected)
+            checked: Option<bool>,
+            /// The multiple attribute allows multiple values for file/email inputs
+            ///
+            /// Example: multiple (allows multiple file selection)
+            multiple: Option<bool>,
+            /// The form attribute associates input with a form by ID
+            ///
+            /// Example: form="myform" (belongs to form with id="myform")
+            form: String,
+            /// The formaction attribute specifies form submission URL
+            ///
+            /// Example: formaction="/submit" (overrides form action)
+            formaction: String,
+            /// The formmethod attribute specifies HTTP method for form submission
+            ///
+            /// Example: formmethod="post" (uses POST method)
+            formmethod: String,
+            /// The formnovalidate attribute bypasses form validation
+            ///
+            /// Example: formnovalidate (skips validation on submit)
+            formnovalidate: Option<bool>,
+            /// The formtarget attribute specifies where to display form response
+            ///
+            /// Example: formtarget="_blank" (opens in new window)
+            formtarget: String,
         }
 
         /// HTML `<textarea>` element - Multi-line text input control
@@ -1674,6 +1761,15 @@ pub mod elements {
             /// The maxlength attribute specifies maximum character count
             /// Example: maxlength="500" (limits to 500 characters)
             maxlength: Option<i32>,
+            /// The minlength attribute specifies minimum character count
+            /// Example: minlength="10" (requires at least 10 characters)
+            minlength: Option<i32>,
+            /// The wrap attribute specifies how text wraps
+            /// Example: wrap="hard" (inserts line breaks)
+            wrap: String,
+            /// The form attribute associates textarea with a form by ID
+            /// Example: form="myform" (belongs to form with id="myform")
+            form: String,
         }
 
         /// HTML `<button>` element - Clickable button control
@@ -1700,6 +1796,18 @@ pub mod elements {
             /// The formmethod attribute overrides form's method for this button
             /// Example: formmethod="get"
             formmethod: String,
+            /// The formenctype attribute overrides form's encoding type for this button
+            /// Example: formenctype="multipart/form-data"
+            formenctype: String,
+            /// The formnovalidate attribute bypasses form validation for this button
+            /// Example: formnovalidate (skips validation on submit)
+            formnovalidate: Option<bool>,
+            /// The formtarget attribute specifies where to display form response
+            /// Example: formtarget="_blank" (opens in new window)
+            formtarget: String,
+            /// The form attribute associates button with a form by ID
+            /// Example: form="myform" (belongs to form with id="myform")
+            form: String,
         }
 
         /// HTML `<select>` element - Dropdown selection list
@@ -1726,6 +1834,12 @@ pub mod elements {
             /// The required attribute makes selection mandatory
             /// Example: required (user must select an option)
             required: Option<bool>,
+            /// The form attribute associates select with a form by ID
+            /// Example: form="myform" (belongs to form with id="myform")
+            form: String,
+            /// The autofocus attribute automatically focuses the select on page load
+            /// Example: autofocus (select gets focus when page loads)
+            autofocus: Option<bool>,
         }
 
         /// HTML `<option>` element - Defines option in a select dropdown
@@ -1844,6 +1958,12 @@ pub mod elements {
             /// The playsinline attribute plays inline on iOS (instead of fullscreen)
             /// Example: playsinline (important for iPhone users)
             playsinline: Option<bool>,
+            /// The crossorigin attribute sets the mode of the request to an HTTP CORS Request
+            crossorigin: String,
+            /// The disablepictureinpicture attribute prevents the video from being displayed in picture-in-picture mode
+            disablepictureinpicture: Option<bool>,
+            /// The disableremoteplayback attribute disables the capability of remote playback
+            disableremoteplayback: Option<bool>,
         }
 
         /// HTML `<audio>` element - Embeds sound content in the document
@@ -1870,6 +1990,12 @@ pub mod elements {
             /// The preload attribute hints how to preload the audio
             /// Example: preload="none" (doesn't preload)
             preload: String,
+            /// The crossorigin attribute configures CORS requests
+            /// Example: crossorigin="anonymous" | "use-credentials"
+            crossorigin: String,
+            /// The volume attribute sets the default volume level
+            /// Example: volume="0.5" (range 0.0 to 1.0)
+            volume: String,
         }
 
         /// HTML `<source>` element - Defines media resources for video/audio elements
@@ -2319,6 +2445,9 @@ pub mod elements {
         ///
         /// ```<details><summary>Click to view details</summary><p>Details content goes here...</p></details>```
         details {
+            /// The open attribute specifies that the details should be visible (open) to the user
+            /// Example: open="open" (details are open)
+            open: Option<bool>,
         }
 
         /// HTML `<figcaption>` element - Defines a caption for a `<figure>` element
@@ -2712,6 +2841,258 @@ pub mod elements {
             href: String,
             /// The target attribute specifies the target for all relative URLs
             /// ```<base href="URL_ADDRESS.example.com/" target="_blank">```
+            target: String,
+        }
+
+        /// HTML `<fieldset>` element - Groups related elements in a form
+        ///
+        /// Example:
+        ///
+        /// ```<fieldset><legend>Personal Info</legend><input type="text" name="name"></fieldset>```
+        fieldset {
+            /// The disabled attribute disables all form controls within the fieldset
+            /// ```<fieldset disabled>```
+            disabled: Option<bool>,
+            /// The form attribute specifies which form the fieldset belongs to
+            /// ```<fieldset form="myform">```
+            form: String,
+            /// The name attribute specifies the name of the fieldset
+            /// ```<fieldset name="personal">```
+            name: String,
+        }
+
+        /// HTML `<datalist>` element - Contains a set of option elements for other controls
+        ///
+        /// Example:
+        ///
+        /// ```<datalist id="browsers"><option value="Chrome"><option value="Firefox"></datalist>```
+        datalist {
+        }
+
+        /// HTML `<caption>` element - Defines a table caption
+        ///
+        /// Example:
+        ///
+        /// ```<table><caption>Monthly Sales</caption><tr><th>Month</th><th>Sales</th></tr></table>```
+        caption {
+        }
+
+        /// HTML `<col>` element - Specifies column properties for each column within a colgroup element
+        ///
+        /// Example:
+        ///
+        /// ```<colgroup><col span="2" style="background-color:red"></colgroup>```
+        col {
+            /// The span attribute specifies the number of columns a col element should span
+            /// ```<col span="2">```
+            span: Option<i32>,
+        }
+
+        /// HTML `<colgroup>` element - Specifies a group of one or more columns in a table for formatting
+        ///
+        /// Example:
+        ///
+        /// ```<colgroup><col span="2" style="background-color:red"></colgroup>```
+        colgroup {
+            /// The span attribute specifies the number of columns a colgroup should span
+            /// ```<colgroup span="3">```
+            span: Option<i32>,
+        }
+
+        /// HTML `<abbr>` element - Defines an abbreviation or acronym
+        ///
+        /// Example:
+        ///
+        /// ```<abbr title="World Health Organization">WHO</abbr>```
+        abbr {
+        }
+
+        /// HTML `<big>` element - Makes text bigger (deprecated in HTML5)
+        ///
+        /// **DEPRECATED**: Use CSS `font-size` property instead
+        ///
+        /// Example:
+        ///
+        /// ```<big>This text is bigger</big>```
+        #[deprecated = "Use CSS font-size property instead"]
+        big {
+        }
+
+        /// HTML `<tt>` element - Defines teletype text (deprecated in HTML5)
+        ///
+        /// **DEPRECATED**: Use CSS `font-family: monospace` instead
+        ///
+        /// Example:
+        ///
+        /// ```<tt>Monospace text</tt>```
+        #[deprecated = "Use CSS font-family: monospace instead"]
+        tt {
+        }
+
+        /// HTML `<strike>` element - Defines strikethrough text (deprecated in HTML5)
+        ///
+        /// **DEPRECATED**: Use `<del>` or CSS `text-decoration: line-through` instead
+        ///
+        /// Example:
+        ///
+        /// ```<strike>Strikethrough text</strike>```
+        #[deprecated = "Use <del> or CSS text-decoration: line-through instead"]
+        strike {
+        }
+
+        /// HTML `<center>` element - Centers text (deprecated in HTML5)
+        ///
+        /// **DEPRECATED**: Use CSS `text-align: center` instead
+        ///
+        /// Example:
+        ///
+        /// ```<center>Centered text</center>```
+        #[deprecated = "Use CSS text-align: center instead"]
+        center {
+        }
+
+        /// HTML `<font>` element - Defines font properties (deprecated in HTML5)
+        ///
+        /// **DEPRECATED**: Use CSS font properties instead
+        ///
+        /// Example:
+        ///
+        /// ```<font color="red" size="3">Colored text</font>```
+        #[deprecated = "Use CSS font properties instead"]
+        font {
+            /// The color attribute specifies the text color
+            /// ```<font color="red">```
+            color: String,
+            /// The size attribute specifies the font size
+            /// ```<font size="3">```
+            size: String,
+            /// The face attribute specifies the font family
+            /// ```<font face="Arial">```
+            face: String,
+        }
+
+        /// HTML `<acronym>` element - Defines an acronym (deprecated in HTML5)
+        ///
+        /// **DEPRECATED**: Use `<abbr>` instead
+        ///
+        /// Example:
+        ///
+        /// ```<acronym title="World Wide Web">WWW</acronym>```
+        #[deprecated = "Use <abbr> instead"]
+        acronym {
+        }
+
+        /// HTML `<track>` element - Defines text tracks for media elements
+        ///
+        /// Example:
+        ///
+        /// ```<video><track kind="subtitles" src="subtitles.vtt" srclang="en" label="English"></video>```
+        track {
+            /// The kind attribute specifies the kind of text track
+            /// ```<track kind="subtitles">```
+            kind: String,
+            /// The src attribute specifies the URL of the track file
+            /// ```<track src="subtitles.vtt">```
+            src: String,
+            /// The srclang attribute specifies the language of the track text data
+            /// ```<track srclang="en">```
+            srclang: String,
+            /// The label attribute specifies the title of the text track
+            /// ```<track label="English">```
+            label: String,
+            /// The default attribute specifies that the track is to be enabled if the user's preferences do not indicate another track would be more appropriate
+            /// ```<track default>```
+            default: Option<bool>,
+        }
+
+        /// HTML `<param>` element - Defines parameters for an object element
+        ///
+        /// Example:
+        ///
+        /// ```<object><param name="autoplay" value="true"></object>```
+        param {
+            /// The name attribute specifies the name of the parameter
+            /// ```<param name="autoplay">```
+            name: String,
+            /// The value attribute specifies the value of the parameter
+            /// ```<param value="true">```
+            value: String,
+        }
+
+        /// HTML `<menu>` element - Defines a list/menu of commands
+        ///
+        /// Example:
+        ///
+        /// ```<menu><menuitem label="New" onclick="newFile()"><menuitem label="Open" onclick="openFile()"></menu>```
+        menu {
+            /// The type attribute specifies the type of menu
+            /// ```<menu type="context">```
+            type_: String,
+            /// The label attribute specifies a visible label for the menu
+            /// ```<menu label="File">```
+            label: String,
+        }
+
+        /// HTML `<menuitem>` element - Defines a command/menu item that the user can invoke from a popup menu
+        ///
+        /// Example:
+        ///
+        /// ```<menuitem label="Copy" onclick="copy()">```
+        menuitem {
+            /// The type attribute specifies the type of command
+            /// ```<menuitem type="command">```
+            type_: String,
+            /// The label attribute specifies the name of the command, as shown to the user
+            /// ```<menuitem label="Copy">```
+            label: String,
+            /// The icon attribute specifies an icon for the command
+            /// ```<menuitem icon="copy.png">```
+            icon: String,
+            /// The disabled attribute specifies that the command is disabled
+            /// ```<menuitem disabled>```
+            disabled: Option<bool>,
+            /// The checked attribute specifies that the command is checked
+            /// ```<menuitem checked>```
+            checked: Option<bool>,
+            /// The radiogroup attribute specifies the name of the group of commands that will be toggled when the command itself is toggled
+            /// ```<menuitem radiogroup="alignment">```
+            radiogroup: String,
+            /// The command attribute specifies the ID of a command element to invoke
+            /// ```<menuitem command="copy-cmd">```
+            command: String,
+        }
+
+        /// HTML `<map>` element - Defines an image map
+        ///
+        /// Example:
+        ///
+        /// ```<map name="workmap"><area shape="rect" coords="34,44,270,350" href="computer.htm"></map>```
+        map {
+            /// The name attribute specifies the name of the image map
+            /// ```<map name="workmap">```
+            name: String,
+        }
+
+        /// HTML `<area>` element - Defines an area inside an image map
+        ///
+        /// Example:
+        ///
+        /// ```<area shape="rect" coords="34,44,270,350" href="computer.htm" alt="Computer">```
+        area {
+            /// The shape attribute specifies the shape of the area
+            /// ```<area shape="rect">```
+            shape: String,
+            /// The coords attribute specifies the coordinates of the area
+            /// ```<area coords="34,44,270,350">```
+            coords: String,
+            /// The href attribute specifies the URL of the page the link goes to
+            /// ```<area href="computer.htm">```
+            href: String,
+            /// The alt attribute specifies an alternate text for the area
+            /// ```<area alt="Computer">```
+            alt: String,
+            /// The target attribute specifies where to open the linked document
+            /// ```<area target="_blank">```
             target: String,
         }
     }
