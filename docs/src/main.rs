@@ -28,8 +28,6 @@ pub enum Page {
 
     // Guides
     Performance,
-    Rust,
-    Testing,
     Deployment,
 
     // Examples
@@ -133,8 +131,13 @@ fn App() -> Node {
                         Page::When => <ShowPage />,
                         Page::Lists => <ForPage />,
                         Page::Components => <ComponentsPage />,
+                        Page::Performance => <PerformancePage />,
+
+                        Page::Deployment => <DeploymentPage />,
                         Page::Counter => <CounterExample />,
-                        _ => <div class="p-8">"Page under construction..."</div>,
+                        Page::TodoMVC => <TodoMVCPage />,
+                        Page::HackerNews => <HackerNewsPage />,
+                        Page::RealWorld => <RealWorldPage />,
                     })}
                 </main>
 
@@ -253,9 +256,12 @@ fn Navigation(props: &NavigationProps) -> Node {
                 nav_link(Page::Philosophy, "Philosophy"),
             ])}
 
-            {section("Reactive Primitives", vec![
+            {section("Macros", vec![
                 nav_link(Page::Rsx, "rsx!"),
                 nav_link(Page::Components, "#[component]"),
+            ])}
+
+            {section("Reactive Primitives", vec![
                 nav_link(Page::Signals, "create_signal"),
                 nav_link(Page::Effects, "create_effect"),
                 nav_link(Page::Resources, "create_resource"),
@@ -268,8 +274,6 @@ fn Navigation(props: &NavigationProps) -> Node {
 
             {section("Guides", vec![
                 nav_link(Page::Performance, "Performance"),
-                nav_link(Page::Rust, "Rust"),
-                nav_link(Page::Testing, "Testing"),
                 nav_link(Page::Deployment, "Deployment"),
             ])}
         </nav>
@@ -777,193 +781,242 @@ fn ResourcesPage() -> Node {
             <header class="mb-12">
                 <h1 title="" class="text-4xl font-bold text-gray-900 dark:text-gray-100">Resources</h1>
                 <p class="mt-4 text-lg text-gray-600 dark:text-gray-400">
-                    "Resources handle asynchronous data fetching with built-in loading and error states."
+                    "Resources provide a way to handle asynchronous data loading with built-in loading and error states."
                 </p>
             </header>
 
             <section class="prose prose-gray dark:prose-invert max-w-none">
                 <h2 class="font-bold uppercase">Introduction</h2>
                 <p>
-                    "Resources are reactive primitives for handling asynchronous operations like API calls.
-                    They automatically track loading states and provide a simple way to work with async data."
+                    "Resources in Momenta are reactive primitives designed for handling asynchronous operations like API calls, 
+                    file loading, or any other async task. They automatically manage loading states, errors, and data updates."
                 </p>
 
-                <h2 class="font-bold uppercase">Basic Example</h2>
+                <h2 class="font-bold uppercase">Basic Usage</h2>
                 <CodeBlock
                     language="rust"
                     filename="src/main.rs"
                     highlight=""
                     code={r#"use momenta::prelude::*;
 
-async fn fetch_user_data() -> Result<User, Error> {
-    // Simulate API call
-    let response = api_client.get("/user/profile").await?;
-    Ok(response.json().await?)
-}
-
 #[component]
 fn UserProfile() -> Node {
-    // Create a resource that fetches user data
-    let user = create_resource(fetch_user_data);
+    let user_resource = create_resource(|| async {
+        // Simulate API call
+        fetch_user_data().await
+    });
     
     rsx! {
         <div>
-            {match user.get() {
-                Some(Ok(user_data)) => rsx! {
-                    <div>
-                        <h1>{user_data.name}</h1>
-                        <p>{user_data.email}</p>
-                    </div>
-                },
-                Some(Err(error)) => rsx! {
-                    <div class="error">Error: {error.to_string()}</div>
-                },
-                None => rsx! {
-                    <div class="loading">Loading...</div>
-                }
-            }}
+            {when!(user_resource.loading() => 
+                <div class="loading">"Loading user data..."</div>
+            else when!(user_resource.error().is_some() => 
+                <div class="error">"Error loading user"</div>
+            ) else 
+                <div>
+                    <h1>"User: " {user_resource.get().unwrap_or_default()}</h1>
+                </div>
+            )}
         </div>
     }
+}
+
+async fn fetch_user_data() -> String {
+    "John Doe".to_string()
 }"#}
                 />
 
                 <Note variant="info">
                     <p>
-                        <strong>"Result support:"</strong> " Resources work with any type, including Result types for proper error handling.
-                        The resource stores whatever your async function returns - None while loading, Some(value) when complete."
+                        <strong>"Automatic State Management:"</strong> " Resources automatically handle loading, error, and success states.
+                        You don't need to manually manage these states with separate signals."
                     </p>
                 </Note>
 
-                <h2 class="font-bold uppercase">API Reference</h2>
-
-                <h3>Creating Resources</h3>
+                <h2 class="font-bold uppercase">Creating Resources</h2>
                 <CodeBlock
                     language="rust"
                     filename="src/main.rs"
                     highlight=""
-                    code={r#"// Basic resource - just pass an async function
-let data = create_resource(async || { fetch_data().await });
+                    code={r#"use momenta::prelude::*;
 
-// Resource with closure capturing variables
-let user_id = create_signal(1);
-let user = create_resource(move || async move {
-    fetch_user(user_id.get()).await
+// Simple resource
+let user_data = create_resource(|| async {
+    fetch_user().await
 });
 
-// Resource that depends on multiple signals
-let search_query = create_signal("".to_string());
-let page = create_signal(1);
-let results = create_resource(move || async move {
+// Resource with parameters
+let user_posts = create_resource(move || {
+    let user_id = user_id.get();
+    async move {
+        fetch_user_posts(user_id).await
+    }
+});
+
+// Resource that depends on signals
+let search_results = create_resource(move || {
     let query = search_query.get();
-    let current_page = page.get();
-    search_posts(query, current_page).await
+    async move {
+        if query.is_empty() {
+            Vec::new()
+        } else {
+            search_api(query).await
+        }
+    }
 });"#}
                 />
 
-                <h3>Resource States</h3>
+                <h2 class="font-bold uppercase">Resource States</h2>
                 <CodeBlock
                     language="rust"
                     filename="src/main.rs"
                     highlight=""
-                    code={r#"// Resource returning Result type
-let resource = create_resource(async || { fetch_data().await });
-
-// Handle all possible states
-match resource.get() {
-    None => {
-        // Still loading initial data
-        rsx! { <div>"Loading..."</div> }
-    },
-    Some(Ok(data)) => {
-        // Data loaded successfully
-        rsx! { <div>{data}</div> }
-    },
-    Some(Err(error)) => {
-        // Error occurred during fetch
-        rsx! { <div class="error">"Error: {error}"</div> }
+                    code={r#"#[component]
+fn ResourceStates() -> Node {
+    let data_resource = create_resource(|| async {
+        // Simulate API call that might fail
+        fetch_data_with_potential_error().await
+    });
+    
+    rsx! {
+        <div>
+            {when!(data_resource.loading() => 
+                <div class="loading">"Loading data..."</div>
+            else when!(data_resource.error().is_some() => 
+                <div class="error">
+                    "Error: " {data_resource.error().unwrap_or_default()}
+                    <button on:click={move |_| data_resource.refetch()}>"Retry"</button>
+                </div>
+            ) else 
+                <div class="success">
+                    "Data: " {data_resource.get().unwrap_or_default()}
+                </div>
+            )}
+        </div>
     }
 }
 
-// Check detailed resource status
-match resource.status().get() {
-    ResourceStatus::Idle => { /* Not started yet */ },
-    ResourceStatus::Pending => { /* Waiting to start */ },
-    ResourceStatus::Loading => { /* Currently fetching */ },
-    ResourceStatus::Resolved => { /* Data is available (success or error) */ },
+async fn fetch_data_with_potential_error() -> Result<String, String> {
+    // Your async logic here
+    Ok("Successfully loaded data".to_string())
 }"#}
                 />
 
-                <h3>Retrying Resources</h3>
+                <h2 class="font-bold uppercase">Retrying Resources</h2>
                 <CodeBlock
                     language="rust"
                     filename="src/main.rs"
                     highlight=""
-                    code={r#"let data = create_resource(async || { fetch_data().await });
-
-// Manually retry the resource
-data.retry();
-
-// Retry when a button is clicked
-rsx! {
-    <div>
-        <button on:click={move |_| data.retry()}>
-            "Retry"
-        </button>
-        {match data.get() {
-            Some(Ok(value)) => rsx! { <div>{value}</div> },
-            Some(Err(error)) => rsx! { <div class="error">Error: {error}</div> },
-            None => rsx! { <div>"Loading..."</div> }
-        }}
-    </div>
-}"#}
-                />
-
-                <h2 class="font-bold uppercase">Advanced Patterns</h2>
-
-                <h3>Reactive Dependencies</h3>
-                <CodeBlock
-                    language="rust"
-                    filename="src/main.rs"
-                    highlight=""
-                    code={r#"// Resources automatically re-run when signals they depend on change
-let user_id = create_signal(1);
-let user_data = create_resource(move || async move {
-    fetch_user(user_id.get()).await
-});
-
-// When user_id changes, the resource will automatically retry
-let change_user = move |new_id| {
-    user_id.set(new_id); // This triggers the resource to re-fetch
-};"#}
-                />
-
-                <h3>Combining with Effects</h3>
-                <CodeBlock
-                    language="rust"
-                    filename="src/main.rs"
-                    highlight=""
-                    code={r#"let data = create_resource(async || { fetch_data().await });
-let processed_data = create_signal(None);
-
-// Process data when it becomes available
-create_effect(move || {
-    if let Some(Ok(raw_data)) = data.get() {
-        let processed = process_data(raw_data);
-        processed_data.set(Some(processed));
+                    code={r#"#[component]
+fn RetryableResource() -> Node {
+    let api_resource = create_resource(|| async {
+        fetch_api_data().await
+    });
+    
+    rsx! {
+        <div>
+            {when!(api_resource.loading() => 
+                <div>"Fetching data..."</div>
+            else when!(api_resource.error().is_some() => 
+                <div>
+                    <p>"Failed to load data"</p>
+                    <button on:click={move |_| api_resource.refetch()}>"Try Again"</button>
+                </div>
+            ) else 
+                <div>{api_resource.get().unwrap_or_default()}</div>
+            )}
+        </div>
     }
-});"#}
+}"#}
+                />
+
+                <h2 class="font-bold uppercase">Reactive Dependencies</h2>
+                <CodeBlock
+                    language="rust"
+                    filename="src/main.rs"
+                    highlight=""
+                    code={r#"#[component]
+fn ReactiveResource() -> Node {
+    let user_id = create_signal(1);
+    
+    // Resource automatically refetches when user_id changes
+    let user_profile = create_resource(move || {
+        let id = user_id.get();
+        async move {
+            fetch_user_profile(id).await
+        }
+    });
+    
+    rsx! {
+        <div>
+            <select on:change={move |e| user_id.set(e.target.value.parse().unwrap_or(1))}>
+                <option value="1">"User 1"</option>
+                <option value="2">"User 2"</option>
+                <option value="3">"User 3"</option>
+            </select>
+            
+            {when!(user_profile.loading() => 
+                <div>"Loading profile..."</div>
+            else 
+                <div>{user_profile.get().unwrap_or_default()}</div>
+            )}
+        </div>
+    }
+}"#}
+                />
+
+                <h2 class="font-bold uppercase">Combining with Effects</h2>
+                <CodeBlock
+                    language="rust"
+                    filename="src/main.rs"
+                    highlight=""
+                    code={r#"#[component]
+fn ResourceWithEffects() -> Node {
+    let data_resource = create_resource(|| async {
+        fetch_important_data().await
+    });
+    
+    // React to resource state changes
+    create_effect(move || {
+        if let Some(data) = data_resource.get() {
+            // Process successful data
+            log!("Data loaded successfully: {}", data);
+        }
+        
+        if let Some(error) = data_resource.error() {
+            // Handle errors
+            log!("Error occurred: {}", error);
+        }
+    });
+    
+    rsx! {
+        <div>
+            {when!(data_resource.loading() => 
+                <div>"Processing..."</div>
+            else 
+                <div>{data_resource.get().unwrap_or_default()}</div>
+            )}
+        </div>
+    }
+}"#}
                 />
 
                 <h2 class="font-bold uppercase">Best Practices</h2>
                 <ul>
-                    <li>"Use resources for any asynchronous data fetching"</li>
-                    <li>"Handle both loading (None) and loaded (Some) states"</li>
-                    <li>"Return Result types from async functions for proper error handling"</li>
-                    <li>"Use signals within resource closures to create reactive dependencies"</li>
-                    <li>"Call retry() to manually re-fetch data when needed"</li>
-                    <li>"Check resource.status() for detailed loading state information"</li>
-                    <li>"Keep async functions simple and focused"</li>
+                    <li>"Use create_resource for any asynchronous data loading"</li>
+                    <li>"Resources automatically handle loading, error, and success states"</li>
+                    <li>"Use refetch() method to retry failed requests"</li>
+                    <li>"Resources automatically re-run when their dependencies change"</li>
+                    <li>"Combine resources with effects for complex state management"</li>
+                    <li>"Use conditional rendering with when! for different resource states"</li>
                 </ul>
+
+                <Note variant="tip">
+                    <p>
+                        <strong>"Performance:"</strong> " Resources are optimized for client-side rendering and 
+                        integrate seamlessly with Momenta's reactive system for efficient updates."
+                    </p>
+                </Note>
             </section>
         </article>
     }
@@ -1736,6 +1789,613 @@ fn App() -> Node {
 }
 
 #[component]
+fn PerformancePage() -> Node {
+    rsx! {
+        <article class="mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8">
+            <header class="mb-12">
+                <h1 class="text-4xl font-bold text-gray-900 dark:text-gray-100">Performance</h1>
+                <p class="mt-4 text-lg text-gray-600 dark:text-gray-400">
+                    "Optimize your Momenta applications for maximum performance and efficiency."
+                </p>
+            </header>
+
+            <section class="prose prose-gray dark:prose-invert max-w-none">
+                <h2 class="font-bold uppercase">Introduction</h2>
+                <p>
+                    "Momenta is designed for performance from the ground up. Its fine-grained reactivity system
+                    ensures that only the parts of your UI that actually need to update will re-render."
+                </p>
+
+                <h2 class="font-bold uppercase">Signal Optimization</h2>
+                <h3>Fine-grained Signals</h3>
+                <p>"Use specific signals instead of large state objects for better performance:"</p>
+                <CodeBlock
+                    language="rust"
+                    filename="src/main.rs"
+                    highlight=""
+                    code={r#"// ❌ Avoid: Large state object
+let app_state = create_signal(AppState {
+    user: User { name: "John".to_string(), email: "john@example.com".to_string() },
+    settings: Settings { theme: "dark".to_string(), notifications: true },
+    data: vec![/* large dataset */],
+});
+
+// ✅ Better: Fine-grained signals
+let user_name = create_signal("John".to_string());
+let user_email = create_signal("john@example.com".to_string());
+let theme = create_signal("dark".to_string());
+let notifications = create_signal(true);
+let data = create_signal(vec![/* large dataset */]);"#}
+                />
+
+                <h3>Derived Values</h3>
+                <p>"Use closures for computed values instead of creating additional signals:"</p>
+                <CodeBlock
+                    language="rust"
+                    filename="src/main.rs"
+                    highlight=""
+                    code={r#"let first_name = create_signal("John".to_string());
+let last_name = create_signal("Doe".to_string());
+
+// ✅ Use closure for derived value
+let full_name = move || format!("{} {}", first_name.get(), last_name.get());
+
+rsx! {
+    <div>
+        <p>"Welcome, " {full_name()}</p>
+    </div>
+}"#}
+                />
+
+                <h2 class="font-bold uppercase">Component Optimization</h2>
+                <h3>Component Splitting</h3>
+                <p>"Break large components into smaller ones to minimize re-renders:"</p>
+                <CodeBlock
+                    language="rust"
+                    filename="src/main.rs"
+                    highlight=""
+                    code={r#"// ✅ Split components for better performance
+#[component]
+fn UserProfile() -> Node {
+    rsx! {
+        <div>
+            <UserAvatar />
+            <UserInfo />
+            <UserActions />
+        </div>
+    }
+}
+
+#[component]
+fn UserAvatar() -> Node {
+    let avatar_url = create_signal("avatar.jpg".to_string());
+    rsx! {
+        <img src={avatar_url} alt="User Avatar" />
+    }
+}
+
+#[component]
+fn UserInfo() -> Node {
+    let name = create_signal("John Doe".to_string());
+    rsx! {
+        <div>
+            <h2>{name}</h2>
+        </div>
+    }
+}"#}
+                />
+
+                <h2 class="font-bold uppercase">List Rendering Performance</h2>
+                <h3>Efficient List Updates</h3>
+                <CodeBlock
+                    language="rust"
+                    filename="src/main.rs"
+                    highlight=""
+                    code={r#"// ✅ Efficient list rendering with keys
+let items = create_signal(vec!["Item 1", "Item 2", "Item 3"]);
+
+rsx! {
+    <ul>
+        {items.get().iter().enumerate().map(|(index, item)| {
+            rsx! {
+                <li key={index}>{item}</li>
+            }
+        })}
+    </ul>
+}"#}
+                />
+
+                <h3>Virtualization for Large Lists</h3>
+                <p>"For very large lists, consider implementing virtualization:"</p>
+                <CodeBlock
+                    language="rust"
+                    filename="src/main.rs"
+                    highlight=""
+                    code={r#"#[component]
+fn VirtualizedList() -> Node {
+    let items = create_signal((0..10000).map(|i| format!("Item {}", i)).collect::<Vec<_>>());
+    let visible_start = create_signal(0);
+    let visible_count = 20;
+    
+    rsx! {
+        <div class="h-96 overflow-y-auto" on:scroll={move |e| {
+            let scroll_top = e.scroll_top();
+            let item_height = 40;
+            visible_start.set(scroll_top / item_height);
+        }}>
+            <div style={format!("height: {}px", items.get().len() * 40)}>
+                <div style={format!("transform: translateY({}px)", visible_start.get() * 40)}>
+                    {items.get().iter().skip(visible_start.get()).take(visible_count).enumerate().map(|(i, item)| {
+                        rsx! {
+                            <div key={visible_start.get() + i} class="h-10 flex items-center px-4 border-b">
+                                {item}
+                            </div>
+                        }
+                    })}
+                </div>
+            </div>
+        </div>
+    }
+}"#}
+                />
+
+                <h2 class="font-bold uppercase">Effect Optimization</h2>
+                <h3>Minimize Effect Dependencies</h3>
+                <CodeBlock
+                    language="rust"
+                    filename="src/main.rs"
+                    highlight=""
+                    code={r#"let user_id = create_signal(1);
+let user_name = create_signal("John".to_string());
+let last_login = create_signal("2024-01-01".to_string());
+
+// ❌ Avoid: Effect depends on unnecessary signals
+create_effect(move || {
+    log!("User {} logged in at {}", user_name.get(), last_login.get());
+    // This effect will run when user_name changes, even though we only care about last_login
+});
+
+// ✅ Better: Only depend on what you need
+create_effect(move || {
+    log!("User logged in at {}", last_login.get());
+});"#}
+                />
+
+                <h2 class="font-bold uppercase">Memory Management</h2>
+                <h3>Avoid Memory Leaks</h3>
+                <CodeBlock
+                    language="rust"
+                    filename="src/main.rs"
+                    highlight=""
+                    code={r#"#[component]
+fn CounterComponent() -> Node {
+    let count = create_signal(0);
+    
+    // ✅ Effects automatically clean up when signals change
+    create_effect(move || {
+        // This effect will re-run when count changes
+        log!("Count updated: {}", count.get());
+    });
+    
+    rsx! {
+        <div>
+            <p>"Count: " {count}</p>
+            <button on:click={move |_| count.set(count.get() + 1)}>"Increment"</button>
+        </div>
+    }
+}"#}
+                />
+
+                <h2 class="font-bold uppercase">Bundle Size Optimization</h2>
+                <h3>Code Splitting</h3>
+                <CodeBlock
+                    language="rust"
+                    filename="Cargo.toml"
+                    highlight=""
+                    code={r#"[profile.release]
+opt-level = "s"  # Optimize for size
+lto = true        # Link-time optimization
+codegen-units = 1 # Better optimization
+panic = "abort"   # Smaller binary size"#}
+                />
+
+                <h3>Feature Flags</h3>
+                <CodeBlock
+                    language="rust"
+                    filename="Cargo.toml"
+                    highlight=""
+                    code={r#"[dependencies.momenta]
+version = \"0.2\"
+default-features = false
+features = [\"web\", \"signals\"]  # Only include what you need"#}
+                />
+
+                <h2 class="font-bold uppercase">Best Practices</h2>
+                <ul>
+                    <li>Use fine-grained signals instead of large state objects</li>
+                    <li>Prefer closures for derived values over additional signals</li>
+                    <li>Split large components into smaller, focused components</li>
+                    <li>Minimize dependencies in effects</li>
+                    <li>Use keys for list items to help with efficient updates</li>
+                    <li>Consider virtualization for very large lists</li>
+                    <li>Clean up resources and intervals in effects</li>
+                    <li>Use release profile optimizations for production builds</li>
+                    <li>Only include necessary features to reduce bundle size</li>
+                </ul>
+
+                <h2 class="font-bold uppercase">Performance Monitoring</h2>
+                <CodeBlock
+                    language="rust"
+                    filename="src/main.rs"
+                    highlight=""
+                    code={r#"// ✅ Monitor performance in development
+#[cfg(debug_assertions)]
+create_effect(move || {
+    let start = performance.now();
+    
+    // Your reactive code here
+    expensive_computation();
+    
+    let end = performance.now();
+    if end - start > 16.0 { // More than one frame (60fps)
+        log!("Slow update detected: {}ms", end - start);
+    }
+});"#}
+                />
+
+                <div class="mt-12 flex items-center justify-between border-t border-gray-200 dark:border-gray-800 pt-6">
+                    <a href="#" class="text-sm text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200">
+                        "← Lists"
+                    </a>
+                    <a href="#" class="text-sm text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200">
+                        "Rust Integration →"
+                    </a>
+                </div>
+            </section>
+        </article>
+    }
+}
+
+#[component]
+fn DeploymentPage() -> Node {
+    rsx! {
+        <div class="mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8 space-y-8">
+            <div>
+                <h1 class="text-4xl font-bold mb-4">Deployment</h1>
+                <p class="text-lg text-gray-600 mb-8">
+                    Deploy your Momenta applications to production.
+                </p>
+            </div>
+
+            <div>
+                <h2 class="text-2xl font-bold mb-4">Build for Production</h2>
+                <p class="mb-4">
+                    Optimize your build for production deployment.
+                </p>
+                <CodeBlock
+                    language="bash"
+                    filename="terminal"
+                    highlight=""
+                    code={r#"# Build with optimizations
+cargo build --release --target wasm32-unknown-unknown
+
+# Generate bindings
+wasm-bindgen --out-dir pkg --target web target/wasm32-unknown-unknown/release/your_app.wasm"#}
+                />
+            </div>
+
+            <div>
+                <h2 class="text-2xl font-bold mb-4">Static Hosting</h2>
+                <p class="mb-4">
+                    Deploy to static hosting platforms like Netlify or Vercel.
+                </p>
+                <CodeBlock
+                    language="toml"
+                    filename="netlify.toml"
+                    highlight=""
+                    code={r#"[build]
+  command = "cargo build --release --target wasm32-unknown-unknown && wasm-bindgen --out-dir pkg --target web target/wasm32-unknown-unknown/release/your_app.wasm"
+  publish = "pkg"
+
+[[headers]]
+  for = "*.wasm"
+  [headers.values]
+    Content-Type = "application/wasm""#}
+                />
+            </div>
+
+            <div>
+                <h2 class="text-2xl font-bold mb-4">Best Practices</h2>
+                <ul class="list-disc list-inside space-y-2 text-gray-700">
+                    <li>Use release builds for production</li>
+                    <li>Enable WASM optimizations</li>
+                    <li>Set proper MIME types for .wasm files</li>
+                    <li>Use CDN for faster loading</li>
+                    <li>Enable gzip compression</li>
+                </ul>
+            </div>
+        </div>
+    }
+}
+
+#[component]
+fn TodoMVCPage() -> Node {
+    rsx! {
+        <div class="space-y-8">
+            <div>
+                <h1 class="text-4xl font-bold mb-4">TodoMVC Example</h1>
+                <p class="text-lg text-gray-600 mb-8">
+                    "A complete TodoMVC implementation showcasing Momenta's capabilities."
+                </p>
+            </div>
+
+            <div>
+                <h2 class="text-2xl font-bold mb-4">Todo State Management</h2>
+                <CodeBlock
+                    language="rust"
+                    filename="src/todo.rs"
+                    highlight=""
+                    code={r#"#[derive(Clone, PartialEq)]
+struct Todo {
+    id: u32,
+    text: String,
+    completed: bool,
+}
+
+let todos = create_signal(Vec::<Todo>::new());
+let filter = create_signal(Filter::All);"#}
+                />
+            </div>
+
+            <div>
+                <h2 class="text-2xl font-bold mb-4">Add Todo Component</h2>
+                <CodeBlock
+                    language="rust"
+                    filename="src/components.rs"
+                    highlight=""
+                    code={r#"#[component]
+fn AddTodo(todos: Signal<Vec<Todo>>) -> Node {
+    let input_text = create_signal(String::new());
+    
+    rsx! {
+        <input 
+            type="text"
+            placeholder="What needs to be done?"
+            value={input_text.get()}
+            oninput={move |e| input_text.set(e.target.value)}
+            onkeydown={move |e| {
+                if e.key == "Enter" && !input_text.get().trim().is_empty() {
+                    let new_todo = Todo {
+                        id: generate_id(),
+                        text: input_text.get().trim().to_string(),
+                        completed: false,
+                    };
+                    todos.update(|list| list.push(new_todo));
+                    input_text.set(String::new());
+                }
+            }}
+        />
+    }
+}"#}
+                />
+            </div>
+
+            <div>
+                <h2 class="text-2xl font-bold mb-4">Key Features</h2>
+                <ul class="list-disc list-inside space-y-2 text-gray-700">
+                    <li>Add, edit, and delete todos</li>
+                    <li>Mark todos as complete/incomplete</li>
+                    <li>Filter todos by status (All, Active, Completed)</li>
+                    <li>Clear completed todos</li>
+                    <li>Persistent state management</li>
+                </ul>
+            </div>
+        </div>
+    }
+}
+
+#[component]
+fn HackerNewsPage() -> Node {
+    rsx! {
+        <div class="space-y-8">
+            <div>
+                <h1 class="text-4xl font-bold mb-4">HackerNews Clone</h1>
+                <p class="text-lg text-gray-600 mb-8">
+                    An advanced example showing API integration and real-time updates.
+                </p>
+            </div>
+
+            <div>
+                <h2 class="text-2xl font-bold mb-4">API Integration</h2>
+                <CodeBlock
+                    language="rust"
+                    filename="src/api.rs"
+                    highlight=""
+                    code={r#"use momenta::prelude::*;
+
+#[derive(Clone, PartialEq)]
+struct Story {
+    id: u32,
+    title: String,
+    url: Option<String>,
+    score: u32,
+    by: String,
+}
+
+// Use create_resource for async data loading
+let top_stories = create_resource(|| async {
+    // In a real app, you'd use fetch API or HTTP client
+    fetch_top_stories().await
+});
+
+async fn fetch_top_stories() -> Result<Vec<Story>, String> {
+    // Simulate API call
+    Ok(vec![
+        Story {
+            id: 1,
+            title: "Example Story".to_string(),
+            url: Some("https://example.com".to_string()),
+            score: 100,
+            by: "user123".to_string(),
+        }
+    ])
+}"#}
+                />
+            </div>
+
+            <div>
+                <h2 class="text-2xl font-bold mb-4">Story List Component</h2>
+                <CodeBlock
+                    language="rust"
+                    filename="src/components.rs"
+                    highlight=""
+                    code={r#"#[component]
+fn StoryList() -> Node {
+    let stories_resource = create_resource(|| async {
+        fetch_stories().await
+    });
+    
+    rsx! {
+        <div class="story-list">
+            {when!(stories_resource.loading() => 
+                <div>"Loading stories..."</div>
+            else when!(stories_resource.error().is_some() => 
+                <div class="error">"Failed to load stories"</div>
+            ) else 
+                <div>
+                    {stories_resource.get().unwrap_or_default().iter().map(|story| {
+                        rsx! {
+                            <div key={story.id} class="story-item">
+                                <h3>{story.title.clone()}</h3>
+                                <p>"Score: " {story.score} " by " {story.by.clone()}</p>
+                                {when!(story.url.is_some() => 
+                                    <a href={story.url.clone().unwrap()} target="_blank">"Read more"</a>
+                                )}
+                            </div>
+                        }
+                    })}
+                </div>
+            )}
+        </div>
+    }
+}
+
+async fn fetch_stories() -> Result<Vec<Story>, String> {
+    // Simulate API call to HackerNews
+    Ok(vec![
+        Story {
+            id: 1,
+            title: "Show HN: My new project".to_string(),
+            url: Some("https://example.com".to_string()),
+            score: 42,
+            by: "developer".to_string(),
+        },
+        Story {
+            id: 2,
+            title: "Ask HN: What's your favorite tool?".to_string(),
+            url: None,
+            score: 15,
+            by: "curious_user".to_string(),
+        },
+    ])
+}"#}
+                />
+            </div>
+
+            <div>
+                <h2 class="text-2xl font-bold mb-4">Features</h2>
+                <ul class="list-disc list-inside space-y-2 text-gray-700">
+                    <li>Real-time story fetching from HackerNews API</li>
+                    <li>Infinite scrolling and pagination</li>
+                    <li>Story details and comments</li>
+                    <li>Search and filtering</li>
+                    <li>Responsive design</li>
+                </ul>
+            </div>
+        </div>
+    }
+}
+
+#[component]
+fn RealWorldPage() -> Node {
+    rsx! {
+        <div class="space-y-8">
+            <div>
+                <h1 class="text-4xl font-bold mb-4">RealWorld App</h1>
+                <p class="text-lg text-gray-600 mb-8">
+                    A full-featured blogging platform demonstrating complex state management.
+                </p>
+            </div>
+
+            <div>
+                <h2 class="text-2xl font-bold mb-4">Authentication</h2>
+                <CodeBlock
+                    language="rust"
+                    filename="src/auth.rs"
+                    highlight=""
+                    code={r#"#[derive(Clone, PartialEq)]
+struct User {
+    username: String,
+    email: String,
+    token: String,
+}
+
+let user = create_signal(Option::<User>::None);
+let is_authenticated = create_signal(false);
+
+// Update authentication status when user changes
+create_effect(move || {
+    is_authenticated.set(user.get().is_some());
+});"#}
+                />
+            </div>
+
+            <div>
+                <h2 class="text-2xl font-bold mb-4">Article Management</h2>
+                <CodeBlock
+                    language="rust"
+                    filename="src/articles.rs"
+                    highlight=""
+                    code={r#"#[component]
+fn ArticleEditor() -> Node {
+    let title = create_signal(String::new());
+    let body = create_signal(String::new());
+    let tags = create_signal(Vec::<String>::new());
+    
+    let submit_article = move || {
+        let article = Article {
+            title: title.get(),
+            body: body.get(),
+            tag_list: tags.get(),
+        };
+        // Submit to API
+    };
+    
+    rsx! {
+        <form onsubmit={move |_| submit_article()}>
+            // Form fields
+        </form>
+    }
+}"#}
+                />
+            </div>
+
+            <div>
+                <h2 class="text-2xl font-bold mb-4">Key Features</h2>
+                <ul class="list-disc list-inside space-y-2 text-gray-700">
+                    <li>User authentication and profiles</li>
+                    <li>Article creation, editing, and deletion</li>
+                    <li>Comments and favorites</li>
+                    <li>Following users and tags</li>
+                    <li>Global feed and personal feed</li>
+                    <li>Responsive design with routing</li>
+                </ul>
+            </div>
+        </div>
+    }
+}
+
+#[component]
 fn ShowPage() -> Node {
     rsx! {
         <article class="mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8">
@@ -1891,14 +2551,13 @@ rsx! {
                     highlight=""
                     code={r#"pub struct PermissionProps {
     pub required_permission: &'static str,
+    pub user_permissions: Vec<String>,
     pub children: Vec<Node>,
 }
 
 #[component]
 fn RequirePermission(props: &PermissionProps) -> Node {
-    let user_permissions = use_context::<Vec<String>>();
-    
-    let has_permission = user_permissions
+    let has_permission = props.user_permissions
         .iter()
         .any(|p| p == props.required_permission);
     
@@ -1914,8 +2573,12 @@ fn RequirePermission(props: &PermissionProps) -> Node {
 }
 
 // Usage
+let user_permissions = vec!["admin".to_string(), "user".to_string()];
 rsx! {
-    <RequirePermission required_permission="admin">
+    <RequirePermission 
+        required_permission="admin" 
+        user_permissions={user_permissions}
+    >
         <AdminSettings />
     </RequirePermission>
 }"#}
