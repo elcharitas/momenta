@@ -1,6 +1,6 @@
 [package]
 name = "momenta-macros"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2024"
 description = "Procedural macros for momenta, providing JSX-like syntax for Rust"
 authors = ["Jonathan Irhodia <jonathanirhodia@gmail.com>"]
@@ -20,4 +20,4 @@ regex = "1.11"
 syn = { version = "2.0", features = ["full", "extra-traits"] }
 
 [dev-dependencies]
-momenta = { path = "../momenta", version = "0.2.0" }
+momenta = { path = "../momenta", version = "0.2.1" }
