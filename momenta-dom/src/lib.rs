@@ -391,7 +391,7 @@ where
                     }
                 }
             }
-            callback(&node)
+            callback(node)
         },
     )
 }

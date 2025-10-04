@@ -1,6 +1,6 @@
 [package]
 name = "momenta"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2024"
 description = "A framework for building element level reactive ui"
 authors = ["Jonathan Irhodia <jonathanirhodia@gmail.com>"]
@@ -12,9 +12,9 @@ documentation = "https://docs.rs/momenta"
 
 [dependencies]
 paste = "1.0"
-momenta-macros = { path = "../momenta-macros", version = "0.2.2" }
-momenta-core = { path = "../momenta-core", version = "0.2.2" }
-momenta-dom = { path = "../momenta-dom", version = "0.2.2", optional = true }
+momenta-macros = { path = "../momenta-macros", version = "0.2.3" }
+momenta-core = { path = "../momenta-core", version = "0.2.3" }
+momenta-dom = { path = "../momenta-dom", version = "0.2.3", optional = true }
 wasm-bindgen = { version = "0.2", optional = true }
 wasm-bindgen-futures = { version = "0.4", optional = true }
 web-sys = { version = "0.3", optional = true, features = [

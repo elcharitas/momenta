@@ -1,6 +1,6 @@
 [package]
 name = "momenta-core"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2024"
 description = "Core types and utilities for Momenta framework"
 authors = ["Jonathan Irhodia <jonathanirhodia@gmail.com>"]
@@ -12,7 +12,7 @@ documentation = "https://docs.rs/momenta-core"
 
 [dependencies]
 paste = "1.0"
-momenta-macros = { path = "../momenta-macros", version = "0.2.2" }
+momenta-macros = { path = "../momenta-macros", version = "0.2.3" }
 spin = { version = "0.10" }
 wasm-bindgen = { version = "0.2", optional = true }
 wasm-bindgen-futures = { version = "0.4", optional = true }
@@ -20,11 +20,7 @@ web-sys = { version = "0.3", optional = true, features = ["Event"] }
 
 [features]
 default = ["full-reactivity"]
-# Enable WASM support
 wasm = ["wasm-bindgen", "wasm-bindgen-futures", "web-sys"]
-# Enable computed signals
 computed = []
-# Enable memoization
 memoization = []
-# Enable all reactivity features
 full-reactivity = ["computed", "memoization"]
