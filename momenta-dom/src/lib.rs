@@ -31,22 +31,43 @@ mod element_cache {
     use core::cell::UnsafeCell;
 
     #[derive(Debug)]
-    // UnsafeCell wrapper for WASM single-threaded environment
+    /// UnsafeCell wrapper for WASM single-threaded environment.
+    ///
+    /// # Safety
+    ///
+    /// This implementation is safe only in WASM's single-threaded environment.
+    /// WebAssembly runs on a single thread, which means there can never be
+    /// concurrent access to the cache. The `Sync` implementation is sound
+    /// because:
+    ///
+    /// 1. WASM has no threading support by default
+    /// 2. All JavaScript interactions happen on the main thread
+    /// 3. There are no data races possible in a single-threaded context
+    ///
+    /// **Warning**: Do not use this code in multi-threaded environments.
     struct ElementCache {
         inner: UnsafeCell<Option<BTreeMap<String, web_sys::Element>>>,
     }
 
+    // SAFETY: This is only safe in WASM's single-threaded environment.
+    // See struct documentation for details.
     unsafe impl Sync for ElementCache {}
 
     static ELEMENT_CACHE: ElementCache = ElementCache {
         inner: UnsafeCell::new(None),
     };
 
-    // Safe in WASM because it's single-threaded
+    /// Access the element cache with a closure.
+    ///
+    /// # Safety
+    ///
+    /// This function uses `unsafe` internally to access the `UnsafeCell`, but is
+    /// safe to call in WASM because JavaScript/WASM guarantees single-threaded execution.
     pub(crate) fn with_cache<F, R>(f: F) -> R
     where
         F: FnOnce(&mut BTreeMap<String, web_sys::Element>) -> R,
     {
+        // SAFETY: Safe in WASM single-threaded environment. No concurrent access possible.
         unsafe {
             let cache = &mut *ELEMENT_CACHE.inner.get();
             if cache.is_none() {

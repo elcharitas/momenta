@@ -184,10 +184,7 @@ pub mod prelude {
     pub use momenta_core::signals::{
         Signal, SignalValue, batch, create_effect, create_effect_with_cleanup, create_signal,
     };
-    #[cfg(all(
-        feature = "wasm",
-        any(feature = "full-elements", feature = "minimal-elements")
-    ))]
-    pub use momenta_dom::render_root;
+    #[cfg(feature = "wasm")]
+    pub use momenta_dom::{component, mount_to_body, render_root};
     pub use momenta_macros::{SignalValue, component, rsx, when};
 }
