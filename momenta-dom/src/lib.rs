@@ -1,7 +1,22 @@
-use crate::{
+#![no_std]
+//! Momenta DOM - DOM rendering and manipulation for the Momenta framework
+//!
+//! This crate provides DOM rendering capabilities for Momenta, including:
+//! - WASM-based rendering for web browsers
+//! - Element caching for efficient updates
+//! - Diff and patch functionality for reactive updates
+//! - Event handler attachment
+//! - HTML element definitions
+
+extern crate alloc;
+
+use momenta_core::{
     nodes::{Component, Node},
     signals::run_scope,
 };
+
+pub use momenta_core::nodes;
+pub use paste::paste;
 
 #[cfg(feature = "wasm")]
 #[wasm_bindgen::prelude::wasm_bindgen]
@@ -53,7 +68,7 @@ trait WasmRender {
 }
 
 #[cfg(feature = "wasm")]
-impl WasmRender for crate::nodes::Element {
+impl WasmRender for momenta_core::nodes::Element {
     fn render(&self, mount: &web_sys::Element) -> Option<web_sys::Element> {
         let element = web_sys::window()
             .and_then(|window| window.document().map(|doc| doc.create_element(self.tag())))
@@ -317,7 +332,7 @@ where
 fn attach_event_handler(
     element: &web_sys::Element,
     event_type: &str,
-    mut callback: crate::nodes::EventCallback,
+    mut callback: momenta_core::nodes::EventCallback,
 ) {
     use alloc::boxed::Box;
     use wasm_bindgen::prelude::*;
@@ -355,7 +370,7 @@ where
                     }
                 }
             }
-            callback(node)
+            callback(&node)
         },
     )
 }

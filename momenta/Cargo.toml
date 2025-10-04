@@ -13,7 +13,8 @@ documentation = "https://docs.rs/momenta"
 [dependencies]
 paste = "1.0"
 momenta-macros = { path = "../momenta-macros", version = "0.2.2" }
-spin = { version = "0.10" }
+momenta-core = { path = "../momenta-core", version = "0.2.2" }
+momenta-dom = { path = "../momenta-dom", version = "0.2.2", optional = true }
 wasm-bindgen = { version = "0.2", optional = true }
 wasm-bindgen-futures = { version = "0.4", optional = true }
 web-sys = { version = "0.3", optional = true, features = [
@@ -28,14 +29,14 @@ web-sys = { version = "0.3", optional = true, features = [
 
 [features]
 default = ["full-elements", "full-reactivity", "wasm"]
-wasm = ["wasm-bindgen", "wasm-bindgen-futures", "web-sys"]
+wasm = ["momenta-dom?/wasm", "wasm-bindgen", "wasm-bindgen-futures", "web-sys"]
 # Enable all HTML elements (default)
-full-elements = []
+full-elements = ["momenta-dom"]
 # Minimal set of common HTML elements
-minimal-elements = []
+minimal-elements = ["momenta-dom"]
 # Enable computed signals
-computed = []
+computed = ["momenta-core/computed"]
 # Enable memoization
-memoization = []
+memoization = ["momenta-core/memoization"]
 # Enable all reactivity features
-full-reactivity = ["computed", "memoization"]
+full-reactivity = ["momenta-core/full-reactivity"]

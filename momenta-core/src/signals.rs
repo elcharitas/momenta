@@ -355,7 +355,7 @@ impl<T: SignalValue + 'static> Signal<T> {
     ///
     /// # Example
     /// ```rust,no_run
-    /// use momenta::signals::create_signal;
+    /// use momenta_core::signals::create_signal;
     ///
     /// let count = create_signal(5);
     /// let doubled = count.derive(|&x| x * 2);
@@ -461,7 +461,7 @@ struct StoredValue {
 ///
 /// # Example
 /// ```ignore
-/// use momenta::signals::{create_signal, batch};
+/// use momenta_core::signals::{create_signal, batch};
 ///
 /// // Within a component scope:
 /// let count = create_signal(0);
@@ -505,7 +505,7 @@ where
 ///
 /// # Example
 /// ```rust,no_run
-/// use momenta::signals::{create_signal, create_memo};
+/// use momenta_core::signals::{create_signal, create_memo};
 ///
 /// let count = create_signal(5);
 /// let expensive = create_memo(
@@ -651,7 +651,7 @@ where
 ///
 /// # Example
 /// ```rust,no_run
-/// use momenta::signals::{create_signal, create_computed};
+/// use momenta_core::signals::{create_signal, create_computed};
 ///
 /// let count = create_signal(0);
 /// let doubled = create_computed(move || count.get() * 2);
@@ -710,7 +710,7 @@ struct Effect {
 ///
 /// # Example
 /// ```ignore
-/// use momenta::signals::{create_signal, create_effect};
+/// use momenta_core::signals::{create_signal, create_effect};
 ///
 /// // Within a component scope:
 /// let count = create_signal(0);
@@ -739,7 +739,7 @@ pub fn create_effect(effect: impl Fn() + Send + 'static) {
 ///
 /// # Example
 /// ```ignore
-/// use momenta::signals::{create_signal, create_effect_with_cleanup};
+/// use momenta_core::signals::{create_signal, create_effect_with_cleanup};
 ///
 /// // Within a component scope:
 /// let count = create_signal(0);
@@ -793,7 +793,7 @@ where
 //==============================================================================
 
 /// Run function within new reactive scope
-pub(crate) fn run_scope(
+pub fn run_scope(
     scope_fn: impl FnMut() -> Node + Send + 'static,
     callback: impl Fn(&Node) + Send + Sync + 'static,
 ) -> Node {
