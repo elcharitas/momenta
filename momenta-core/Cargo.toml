@@ -1,0 +1,26 @@
+[package]
+name = "momenta-core"
+version = "0.2.3"
+edition = "2024"
+description = "Core types and utilities for Momenta framework"
+authors = ["Jonathan Irhodia <jonathanirhodia@gmail.com>"]
+license = "MIT"
+repository = "https://github.com/elcharitas/momenta"
+keywords = ["jsx", "react", "template", "reactive", "signals"]
+categories = ["template-engine", "web-programming"]
+documentation = "https://docs.rs/momenta-core"
+
+[dependencies]
+paste = "1.0"
+momenta-macros = { path = "../momenta-macros", version = "0.2.3" }
+spin = { version = "0.10" }
+wasm-bindgen = { version = "0.2", optional = true }
+wasm-bindgen-futures = { version = "0.4", optional = true }
+web-sys = { version = "0.3", optional = true, features = ["Event"] }
+
+[features]
+default = ["full-reactivity"]
+wasm = ["wasm-bindgen", "wasm-bindgen-futures", "web-sys"]
+computed = []
+memoization = []
+full-reactivity = ["computed", "memoization"]

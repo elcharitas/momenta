@@ -1,0 +1,31 @@
+[package]
+name = "momenta-dom"
+version = "0.2.3"
+edition = "2024"
+description = "DOM rendering extensions for Momenta framework"
+authors = ["Jonathan Irhodia <jonathanirhodia@gmail.com>"]
+license = "MIT"
+repository = "https://github.com/elcharitas/momenta"
+keywords = ["jsx", "dom", "wasm", "web", "rendering"]
+categories = ["web-programming", "wasm"]
+documentation = "https://docs.rs/momenta-dom"
+
+[dependencies]
+paste = "1.0"
+momenta-core = { path = "../momenta-core", version = "0.2.3", features = ["wasm"] }
+momenta-macros = { path = "../momenta-macros", version = "0.2.3" }
+wasm-bindgen = { version = "0.2", optional = true }
+wasm-bindgen-futures = { version = "0.4", optional = true }
+web-sys = { version = "0.3", optional = true, features = [
+    "Document",
+    "Element",
+    "HtmlElement",
+    "Window",
+    "Event",
+    "NamedNodeMap",
+    "Attr",
+] }
+
+[features]
+default = ["wasm"]
+wasm = ["wasm-bindgen", "wasm-bindgen-futures", "web-sys"]

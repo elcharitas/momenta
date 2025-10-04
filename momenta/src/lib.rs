@@ -167,22 +167,24 @@
 
 extern crate alloc;
 
-pub mod dom;
-pub mod nodes;
-pub mod signals;
+// Re-export core types
+pub use momenta_core::{nodes, signals};
+
+// Re-export DOM functionality when available
+pub use momenta_dom as dom;
 
 pub use paste::paste;
 
 pub mod prelude {
-    #[cfg(feature = "wasm")]
-    pub use crate::dom::render_root;
-    pub use crate::nodes::{Component, Node, classes};
+    pub use momenta_core::nodes::{Component, Node, classes};
     #[cfg(any(feature = "computed", feature = "full-reactivity"))]
-    pub use crate::signals::create_computed;
+    pub use momenta_core::signals::create_computed;
     #[cfg(any(feature = "memoization", feature = "full-reactivity"))]
-    pub use crate::signals::create_memo;
-    pub use crate::signals::{
+    pub use momenta_core::signals::create_memo;
+    pub use momenta_core::signals::{
         Signal, SignalValue, batch, create_effect, create_effect_with_cleanup, create_signal,
     };
+    #[cfg(feature = "wasm")]
+    pub use momenta_dom::{component, mount_to_body, render_root};
     pub use momenta_macros::{SignalValue, component, rsx, when};
 }

@@ -14,7 +14,7 @@ pub use momenta_macros::{component, rsx, when};
 ///
 /// # Example
 /// ```rust
-/// use momenta::nodes::classes;
+/// use momenta_core::nodes::classes;
 ///
 /// let is_active = true;
 /// let is_disabled = false;
@@ -37,7 +37,7 @@ pub fn classes(items: &[(&str, bool)]) -> String {
 ///
 /// # Example
 /// ```rust
-/// use momenta::class;
+/// use momenta_core::class;
 ///
 /// let is_active = true;
 /// let class_name = class!("btn", is_active => "btn-active", "btn-primary");
@@ -89,8 +89,8 @@ use alloc::{boxed::Box, sync::Arc};
 ///
 /// # Example
 ///
-/// ```rust
-/// use momenta::prelude::*;
+/// ```rust,ignore
+/// use momenta_core::prelude::*;
 ///
 /// let element = rsx!(<div id="my-id" hidden={true} />);
 /// ```
@@ -106,7 +106,7 @@ pub trait Attribute {
 /// # Example
 ///
 /// ```rust
-/// use momenta::nodes::OptionAttribute;
+/// use momenta_core::nodes::OptionAttribute;
 ///
 /// let maybe_title: Option<&str> = Some("Hello");
 /// assert_eq!(maybe_title.value(), "Hello");
@@ -142,8 +142,8 @@ impl<T: ToString> OptionAttribute for Option<T> {
 ///
 /// You typically won't create Elements directly, but rather use the `rsx!` macro:
 ///
-/// ```rust
-/// use momenta::prelude::*;
+/// ```rust,ignore
+/// use momenta_core::prelude::*;
 ///
 /// let element = rsx!(
 ///     <div class="container">
@@ -200,7 +200,7 @@ impl Element {
         &self.children
     }
 
-    pub(crate) fn html(&self) -> &String {
+    pub fn html(&self) -> &String {
         &self.inner_html
     }
 
@@ -222,8 +222,8 @@ impl Element {
 ///
 /// # Example
 ///
-/// ```rust
-/// use momenta::prelude::*;
+/// ```rust,ignore
+/// use momenta_core::prelude::*;
 ///
 /// struct Card;
 /// #[derive(Default)]
@@ -267,7 +267,7 @@ pub struct DefaultProps;
 /// # Example
 ///
 /// ```rust
-/// use momenta::prelude::*;
+/// use momenta_core::prelude::*;
 ///
 /// let text_node = Node::Text("Hello".to_string());
 /// let fragment = Node::Fragment(vec![text_node]);

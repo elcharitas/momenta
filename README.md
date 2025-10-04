@@ -81,7 +81,7 @@ fn App() -> Node {
 }
 
 fn main() {
-    momenta::mount("app", App);
+    momenta::dom::render_root::<App>("#app");
 }
 ```
 
@@ -190,9 +190,17 @@ momenta = { version = "0.2", features = ["full-reactivity"] }
 ```
 
 Available features:
+- `dom` - All HTML elements with DOM rendering (default)
+- `wasm` - WebAssembly support for browser rendering (default)
 - `computed` - Computed signals support
 - `memoization` - Memoization utilities
-- `full-reactivity` - All reactive features (includes computed + memoization)
+- `full-reactivity` - All reactive features (includes computed + memoization, default)
+
+For server-side rendering without DOM, use only `momenta-core`:
+```toml
+[dependencies]
+momenta-core = "0.2"
+```
 
 ## Community & Support
 
