@@ -34,7 +34,9 @@ name = "docs"
 version = "0.1.0"
 dependencies = [
  "momenta",
+ "momenta-router",
  "wasm-bindgen",
+ "web-sys",
 ]
 
 [[package]]
@@ -64,6 +66,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13dc2df351e3202783a1fe0d44375f7295ffb4049267b0f3018346dc122a1d94"
 
 [[package]]
+name = "matchit"
+version = "0.8.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2f926ade0c4e170215ae43342bf13b9310a437609c81f29f86c5df6657582ef9"
+
+[[package]]
 name = "memchr"
 version = "2.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -90,6 +98,16 @@ dependencies = [
  "quote",
  "regex",
  "syn",
+]
+
+[[package]]
+name = "momenta-router"
+version = "0.1.0"
+dependencies = [
+ "matchit",
+ "momenta",
+ "wasm-bindgen",
+ "web-sys",
 ]
 
 [[package]]

@@ -530,8 +530,11 @@ fn sanitize_html(input: &str) -> String {
 }
 
 #[cfg(feature = "wasm")]
+type EventCallbackInner = Arc<spin::Mutex<Box<dyn FnMut(web_sys::Event) + Send + Sync>>>;
+
+#[cfg(feature = "wasm")]
 #[derive(Default)]
-pub struct EventCallback(Option<Arc<spin::Mutex<Box<dyn FnMut(web_sys::Event) + Send + Sync>>>>);
+pub struct EventCallback(Option<EventCallbackInner>);
 
 #[cfg(feature = "wasm")]
 impl EventCallback {

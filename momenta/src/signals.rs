@@ -37,17 +37,19 @@ static SIGNALS: Mutex<BTreeMap<(usize, usize), StoredValue>> = Mutex::new(BTreeM
 /// Signals that changed during current scope execution
 static SCOPE_SIGNAL_CHANGES: Mutex<BTreeSet<(usize, usize)>> = Mutex::new(BTreeSet::new());
 
+type ScopeCallback = Arc<dyn Fn(&Node) + Send + Sync>;
+type ScopeEffect = Box<dyn Fn() + Send>;
+type ScopeEffectCleanup = Box<dyn FnOnce() + Send>;
+
 /// Functions that can be re-executed per scope
 static SCOPE_FUNCTIONS: Mutex<BTreeMap<usize, Box<dyn FnMut() -> Node + Send>>> =
     Mutex::new(BTreeMap::new());
 /// Callbacks to run after scope renders
-static SCOPE_CALLBACKS: Mutex<BTreeMap<usize, Arc<dyn Fn(&Node) + Send + Sync>>> =
-    Mutex::new(BTreeMap::new());
+static SCOPE_CALLBACKS: Mutex<BTreeMap<usize, ScopeCallback>> = Mutex::new(BTreeMap::new());
 /// Effects by (scope_id, effect_id)
-static SCOPE_EFFECTS: Mutex<BTreeMap<(usize, usize), Box<dyn Fn() + Send>>> =
-    Mutex::new(BTreeMap::new());
+static SCOPE_EFFECTS: Mutex<BTreeMap<(usize, usize), ScopeEffect>> = Mutex::new(BTreeMap::new());
 /// Effect cleanup functions by (scope_id, effect_id)
-static SCOPE_EFFECT_CLEANUPS: Mutex<BTreeMap<(usize, usize), Box<dyn FnOnce() + Send>>> =
+static SCOPE_EFFECT_CLEANUPS: Mutex<BTreeMap<(usize, usize), ScopeEffectCleanup>> =
     Mutex::new(BTreeMap::new());
 
 /// Which signals each scope depends on

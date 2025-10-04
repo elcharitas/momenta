@@ -3,51 +3,20 @@
 extern crate alloc;
 use alloc::{format, vec, vec::Vec};
 use momenta::prelude::*;
+use momenta_router::{RouterContext, RouterMode, routes};
 
 static GITHUB_LINK: &str = "https://github.com/elcharitas/momenta";
 static CRATES_LINK: &str = "https://crates.io/crates/momenta";
 
-#[derive(Clone, Copy, PartialEq, SignalValue)]
-pub enum Page {
-    Home,
-
-    // Start Here
-    GettingStarted,
-    Philosophy,
-
-    // Core Concepts
-    Rsx,
-    Signals,
-    ComputedSignals,
-    Effects,
-    Resources,
-    Components,
-    Classes,
-
-    // Control Flow
-    When,
-    Lists,
-
-    // Guides
-    Performance,
-    Deployment,
-
-    // Examples
-    Counter,
-    TodoMVC,
-    HackerNews,
-    RealWorld,
-}
-
 // Component Props
 pub struct HeaderProps {
-    pub current_page: Signal<Page>,
+    pub router: RouterContext,
     pub theme: Signal<&'static str>,
     pub mobile_menu_open: Signal<bool>,
 }
 
 pub struct NavigationProps {
-    pub current_page: Signal<Page>,
+    pub router: RouterContext,
 }
 
 pub struct CodeBlockProps {
@@ -81,7 +50,8 @@ extern "C" {
 // Main App
 #[component]
 fn App() -> Node {
-    let current_page = create_signal(Page::Home);
+    let router = RouterContext::new(RouterMode::Hash);
+    let current_path = router.current_path();
     let theme = create_signal("light");
     let mobile_menu_open = create_signal(false);
 
@@ -91,13 +61,13 @@ fn App() -> Node {
 
     rsx! {
         <div class={format!("min-h-screen bg-white dark:bg-gray-950 {}", if theme == "dark" { "dark" } else { "" })}>
-            <Header {current_page} {theme} {mobile_menu_open} />
+            <Header {router} {theme} {mobile_menu_open} />
 
             <div class="flex">
                 // Sidebar Navigation
-                {when!(current_page != Page::Home => <aside class="hidden lg:block w-64 shrink-0 border-r border-gray-200 dark:border-gray-800">
+                {when!(current_path.get() != "/" => <aside class="hidden lg:block w-64 shrink-0 border-r border-gray-200 dark:border-gray-800">
                         <div class="sticky top-14 h-[calc(100vh-3.5rem)] overflow-y-auto py-8">
-                            <Navigation {current_page} />
+                            <Navigation {router} />
                         </div>
                     </aside>
                 )}
@@ -114,7 +84,7 @@ fn App() -> Node {
                                 </button>
                             </div>
                             <div class="overflow-y-auto p-4">
-                                <Navigation {current_page} />
+                                <Navigation {router} />
                             </div>
                         </div>
                     </div>
@@ -122,32 +92,32 @@ fn App() -> Node {
 
                 // Main Content
                 <main class="flex-1 min-w-0">
-                    {when!(current_page.get() {
-                        Page::Home => <HomePage {current_page} />,
-                        Page::GettingStarted => <GettingStartedPage />,
-                        Page::Philosophy => <PhilosophyPage />,
-                        Page::Rsx => <RsxPage />,
-                        Page::Signals => <SignalsPage />,
-                        Page::ComputedSignals => <ComputedSignalsPage />,
-                        Page::Effects => <EffectsPage />,
-                        Page::Resources => <ResourcesPage />,
-                        Page::Components => <ComponentsPage />,
-                        Page::Classes => <ClassesPage />,
-                        Page::When => <ShowPage />,
-                        Page::Lists => <ForPage />,
-                        Page::Performance => <PerformancePage />,
-                        Page::Deployment => <DeploymentPage />,
-                        Page::Counter => <CounterExample />,
-                        Page::TodoMVC => <TodoMVCPage />,
-                        Page::HackerNews => <HackerNewsPage />,
-                        Page::RealWorld => <RealWorldPage />,
+                    {routes!(router, current_path, {
+                        "/" => |_| rsx! { <HomePage {router} /> },
+                        "/getting-started" => |_| rsx! { <GettingStartedPage /> },
+                        "/philosophy" => |_| rsx! { <PhilosophyPage /> },
+                        "/rsx" => |_| rsx! { <RsxPage /> },
+                        "/signals" => |_| rsx! { <SignalsPage /> },
+                        "/computed-signals" => |_| rsx! { <ComputedSignalsPage /> },
+                        "/effects" => |_| rsx! { <EffectsPage /> },
+                        "/resources" => |_| rsx! { <ResourcesPage /> },
+                        "/components" => |_| rsx! { <ComponentsPage /> },
+                        "/classes" => |_| rsx! { <ClassesPage /> },
+                        "/when" => |_| rsx! { <ShowPage /> },
+                        "/lists" => |_| rsx! { <ForPage /> },
+                        "/performance" => |_| rsx! { <PerformancePage /> },
+                        "/deployment" => |_| rsx! { <DeploymentPage /> },
+                        "/examples/counter" => |_| rsx! { <CounterExample /> },
+                        "/examples/todomvc" => |_| rsx! { <TodoMVCPage /> },
+                        "/examples/hackernews" => |_| rsx! { <HackerNewsPage /> },
+                        "/examples/realworld" => |_| rsx! { <RealWorldPage /> },
                     })}
                 </main>
 
                 // Right Sidebar (TOC)
-                {when!(current_page != Page::Home => <aside class="hidden xl:block w-64 shrink-0">
+                {when!(current_path.get() != "/" => <aside class="hidden xl:block w-64 shrink-0">
                         <div class="sticky top-14 h-[calc(100vh-3.5rem)] overflow-y-auto p-8">
-                            // <TableOfContents {current_page} />
+                            // <TableOfContents {current_path} />
                         </div>
                     </aside>
                 )}
@@ -159,7 +129,6 @@ fn App() -> Node {
 // Header Component
 #[component]
 fn Header(props: &HeaderProps) -> Node {
-    let current_page = props.current_page;
     let theme = props.theme;
     let mobile_menu_open = props.mobile_menu_open;
 
@@ -177,23 +146,20 @@ fn Header(props: &HeaderProps) -> Node {
                     <i class="fas fa-bars"></i>
                 </button>
 
-                <a href="#" on:click={move |_| current_page.set(Page::Home)} class="flex items-center space-x-2 ml-2 lg:ml-0">
+                <a href="#/" class="flex items-center space-x-2 ml-2 lg:ml-0">
                     <img src="./static/icon.svg" alt="Momenta Logo" class="w-8 h-8" />
                     <span class="font-bold text-lg">Momenta</span>
                 </a>
 
                 <div class="ml-auto flex items-center space-x-4">
                     <nav class="hidden md:flex items-center space-x-6 mr-6">
-                        <a href="#" on:click={move |_| current_page.set(Page::Performance)}
-                           class="text-sm font-medium transition-colors hover:text-blue-600 dark:hover:text-blue-400">
+                        <a href="#/performance" class="text-sm font-medium transition-colors hover:text-blue-600 dark:hover:text-blue-400">
                             Guides
                         </a>
-                        <a href="#" on:click={move |_| current_page.set(Page::GettingStarted)}
-                           class="text-sm font-medium transition-colors hover:text-blue-600 dark:hover:text-blue-400">
+                        <a href="#/getting-started" class="text-sm font-medium transition-colors hover:text-blue-600 dark:hover:text-blue-400">
                             Documentation
                         </a>
-                        <a href="#"
-                           class="text-sm font-medium transition-colors hover:text-blue-600 dark:hover:text-blue-400">
+                        <a href="#" class="text-sm font-medium transition-colors hover:text-blue-600 dark:hover:text-blue-400">
                             Playground
                         </a>
                     </nav>
@@ -222,10 +188,10 @@ fn Header(props: &HeaderProps) -> Node {
 // Navigation Component
 #[component]
 fn Navigation(props: &NavigationProps) -> Node {
-    let current = props.current_page;
+    let current_path = props.router.current_path();
 
-    let nav_link = move |page: Page, label: &'static str| {
-        let is_active = current == page;
+    let nav_link = move |path: &'static str, label: &'static str| {
+        let is_active = current_path.get() == path;
         let class = if is_active {
             "block px-3 py-1.5 text-sm font-medium text-blue-600 dark:text-blue-400"
         } else {
@@ -233,7 +199,7 @@ fn Navigation(props: &NavigationProps) -> Node {
         };
 
         rsx! {
-            <a href="#" on:click={move |_| current.set(page)} class={class}>
+            <a href={format!("#{path}")} class={class}>
                 {label}
             </a>
         }
@@ -255,31 +221,31 @@ fn Navigation(props: &NavigationProps) -> Node {
     rsx! {
         <nav class="px-2">
             {section("Start Here", vec![
-                nav_link(Page::GettingStarted, "Getting Started"),
-                nav_link(Page::Philosophy, "Philosophy"),
+                nav_link("/getting-started", "Getting Started"),
+                nav_link("/philosophy", "Philosophy"),
             ])}
 
             {section("Macros", vec![
-                nav_link(Page::Rsx, "rsx!"),
-                nav_link(Page::Components, "#[component]"),
-                nav_link(Page::Classes, "class!"),
+                nav_link("/rsx", "rsx!"),
+                nav_link("/components", "#[component]"),
+                nav_link("/classes", "class!"),
             ])}
 
             {section("Reactive Primitives", vec![
-                nav_link(Page::Signals, "create_signal"),
-                nav_link(Page::ComputedSignals, "create_computed"),
-                nav_link(Page::Effects, "create_effect"),
-                nav_link(Page::Resources, "create_resource"),
+                nav_link("/signals", "create_signal"),
+                nav_link("/computed-signals", "create_computed"),
+                nav_link("/effects", "create_effect"),
+                nav_link("/resources", "create_resource"),
             ])}
 
             {section("Control Flow", vec![
-                nav_link(Page::When, "when!"),
-                nav_link(Page::Lists, ".iter().map()"),
+                nav_link("/when", "when!"),
+                nav_link("/lists", ".iter().map()"),
             ])}
 
             {section("Guides", vec![
-                nav_link(Page::Performance, "Performance"),
-                nav_link(Page::Deployment, "Deployment"),
+                nav_link("/performance", "Performance"),
+                nav_link("/deployment", "Deployment"),
             ])}
         </nav>
     }
@@ -374,8 +340,7 @@ fn Playground(props: &PlaygroundProps) -> Node {
 
 // Page Components
 #[component]
-fn HomePage(props: &NavigationProps) -> Node {
-    let current_page = props.current_page;
+fn HomePage(_props: &NavigationProps) -> Node {
     rsx! {
         <div class="mx-auto max-w-4xl px-4 py-16 sm:px-6 lg:px-8">
             <div class="text-center py-16">
@@ -386,7 +351,7 @@ fn HomePage(props: &NavigationProps) -> Node {
                     "Momenta makes it simple to build high-performance, reactive user interfaces using Rust's type system and ownership model."
                 </p>
                 <div class="mt-10 flex items-center justify-center gap-4">
-                    <a href="#" on:click={move |_| current_page.set(Page::GettingStarted)} class="rounded-lg bg-blue-600 px-6 py-3 text-sm font-semibold text-white hover:bg-blue-700">
+                    <a href="#/getting-started" class="rounded-lg bg-blue-600 px-6 py-3 text-sm font-semibold text-white hover:bg-blue-700">
                         "Get Started"
                     </a>
                     <a href={GITHUB_LINK} class="rounded-lg border border-gray-300 dark:border-gray-700 px-6 py-3 text-sm font-semibold hover:bg-gray-50 dark:hover:bg-gray-900">
