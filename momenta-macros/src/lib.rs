@@ -927,7 +927,7 @@ impl RsxNode {
                         if name.is_none() {
                             return quote_spanned! {span=> #value };
                         }
-                        quote_spanned! {span=> #name: {#value}.into(), }
+                        quote_spanned! {span=> #[allow(clippy::useless_conversion)] #name: {#value}.into(), }
                     });
 
                 let children_tokens = if !children.is_empty() || is_element {

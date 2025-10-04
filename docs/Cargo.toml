@@ -6,4 +6,6 @@ metadata.workspace = true
 
 [dependencies]
 momenta = { path = "../momenta", features = ["wasm"] }
+momenta-router = { path = "../momenta-router" }
 wasm-bindgen = { version = "0.2" }
+web-sys = { version = "0.3", features = ["Window", "Location", "History"] }

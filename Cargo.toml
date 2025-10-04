@@ -1,3 +1,3 @@
 [workspace]
-members = ["momenta-macros", "momenta", "tests", "docs"]
+members = ["momenta-macros", "momenta", "tests", "docs", "momenta-router"]
 resolver = "3"
