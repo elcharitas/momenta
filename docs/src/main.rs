@@ -788,7 +788,7 @@ fn ResourcesPage() -> Node {
             <section class="prose prose-gray dark:prose-invert max-w-none">
                 <h2 class="font-bold uppercase">Introduction</h2>
                 <p>
-                    "Resources in Momenta are reactive primitives designed for handling asynchronous operations like API calls, 
+                    "Resources in Momenta are reactive primitives designed for handling asynchronous operations like API calls,
                     file loading, or any other async task. They automatically manage loading states, errors, and data updates."
                 </p>
 
@@ -1013,7 +1013,7 @@ fn ResourceWithEffects() -> Node {
 
                 <Note variant="tip">
                     <p>
-                        <strong>"Performance:"</strong> " Resources are optimized for client-side rendering and 
+                        <strong>"Performance:"</strong> " Resources are optimized for client-side rendering and
                         integrate seamlessly with Momenta's reactive system for efficient updates."
                     </p>
                 </Note>

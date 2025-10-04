@@ -10,6 +10,75 @@ use core::{fmt::Display, iter::FromIterator};
 
 pub use momenta_macros::{component, rsx, when};
 
+/// Helper function to conditionally join CSS classes
+///
+/// # Example
+/// ```rust
+/// use momenta::nodes::classes;
+///
+/// let is_active = true;
+/// let is_disabled = false;
+/// let class_name = classes(&[
+///     ("btn", true),
+///     ("btn-active", is_active),
+///     ("btn-disabled", is_disabled),
+/// ]);
+/// assert_eq!(class_name, "btn btn-active");
+/// ```
+pub fn classes(items: &[(&str, bool)]) -> String {
+    items
+        .iter()
+        .filter_map(|(class, condition)| if *condition { Some(*class) } else { None })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Macro for creating conditional classes more ergonomically
+///
+/// # Example
+/// ```rust
+/// use momenta::class;
+///
+/// let is_active = true;
+/// let class_name = class!("btn", is_active => "btn-active", "btn-primary");
+/// ```
+#[macro_export]
+macro_rules! class {
+    // Mixed static and conditional classes
+    ($($item:tt)*) => {{
+        let mut result = String::new();
+        $crate::__class_internal!(result; $($item)*);
+        result
+    }};
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __class_internal {
+    // Base case: empty
+    ($result:ident;) => {};
+
+    // Conditional class: condition => "class"
+    ($result:ident; $cond:expr => $class:expr $(, $($rest:tt)*)?) => {
+        if $cond {
+            if !$result.is_empty() {
+                $result.push(' ');
+            }
+            $result.push_str($class);
+        }
+        $($crate::__class_internal!($result; $($rest)*);)?
+    };
+
+    // Static class: "class"
+    ($result:ident; $class:expr $(, $($rest:tt)*)?) => {
+        if !$result.is_empty() {
+            $result.push(' ');
+        }
+        $result.push_str($class);
+        $($crate::__class_internal!($result; $($rest)*);)?
+    };
+}
+
 #[cfg(feature = "wasm")]
 use alloc::{boxed::Box, sync::Arc};
 
@@ -37,10 +106,13 @@ pub trait Attribute {
 /// # Example
 ///
 /// ```rust
-/// use momenta::prelude::*;
+/// use momenta::nodes::OptionAttribute;
 ///
-/// let maybe_title = Some("Hello".to_string());
-/// let element = rsx!(<div title={maybe_title} />);
+/// let maybe_title: Option<&str> = Some("Hello");
+/// assert_eq!(maybe_title.value(), "Hello");
+///
+/// let no_title: Option<&str> = None;
+/// assert_eq!(no_title.value(), "");
 /// ```
 pub trait OptionAttribute {
     fn value(&self) -> String;
@@ -236,7 +308,7 @@ impl Node {
 
 impl From<String> for Node {
     fn from(value: String) -> Self {
-        Node::Text(value.into())
+        Node::Text(value)
     }
 }
 
@@ -458,14 +530,8 @@ fn sanitize_html(input: &str) -> String {
 }
 
 #[cfg(feature = "wasm")]
+#[derive(Default)]
 pub struct EventCallback(Option<Arc<spin::Mutex<Box<dyn FnMut(web_sys::Event) + Send + Sync>>>>);
-
-#[cfg(feature = "wasm")]
-impl Default for EventCallback {
-    fn default() -> Self {
-        Self(None)
-    }
-}
 
 #[cfg(feature = "wasm")]
 impl EventCallback {

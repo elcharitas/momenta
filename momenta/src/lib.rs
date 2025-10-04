@@ -176,7 +176,13 @@ pub use paste::paste;
 pub mod prelude {
     #[cfg(feature = "wasm")]
     pub use crate::dom::render_root;
-    pub use crate::nodes::{Component, Node};
-    pub use crate::signals::{Signal, SignalValue, create_effect, create_signal};
+    pub use crate::nodes::{Component, Node, classes};
+    #[cfg(any(feature = "computed", feature = "full-reactivity"))]
+    pub use crate::signals::create_computed;
+    #[cfg(any(feature = "memoization", feature = "full-reactivity"))]
+    pub use crate::signals::create_memo;
+    pub use crate::signals::{
+        Signal, SignalValue, batch, create_effect, create_effect_with_cleanup, create_signal,
+    };
     pub use momenta_macros::{SignalValue, component, rsx, when};
 }

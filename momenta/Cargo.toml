@@ -22,8 +22,20 @@ web-sys = { version = "0.3", optional = true, features = [
     "HtmlElement",
     "Window",
     "Event",
+    "NamedNodeMap",
+    "Attr",
 ] }
 
 [features]
-default = []
+default = ["full-elements", "full-reactivity", "wasm"]
 wasm = ["wasm-bindgen", "wasm-bindgen-futures", "web-sys"]
+# Enable all HTML elements (default)
+full-elements = []
+# Minimal set of common HTML elements
+minimal-elements = []
+# Enable computed signals
+computed = []
+# Enable memoization
+memoization = []
+# Enable all reactivity features
+full-reactivity = ["computed", "memoization"]
