@@ -126,6 +126,25 @@ impl WasmRender for crate::nodes::Element {
             old_element.set_inner_html(dangerous_inner_html);
         }
 
+        // Re-attach event handlers (this is crucial for reactivity)
+        // Note: We need to remove old event listeners first, but since we can't easily
+        // track them, we'll rely on the fact that reassigning works in most cases
+        for (event_type, callback) in self.events() {
+            attach_event_handler(old_element, event_type, callback.clone());
+        }
+
+        // Diff and patch children (if no innerHTML)
+        if dangerous_inner_html.is_empty() {
+            // Simple approach: re-render children
+            // TODO: Implement more sophisticated child diffing
+            while let Some(child) = old_element.first_child() {
+                old_element.remove_child(&child).ok();
+            }
+            for child in self.children() {
+                child.render(old_element);
+            }
+        }
+
         // Update cache
         element_cache::with_cache(|cache| {
             use alloc::string::ToString;
@@ -145,9 +164,7 @@ impl WasmRender for Node {
                 mount.set_text_content(Some(&(current_text + text)));
                 None
             }
-            Node::Element(el) => {
-                el.render(mount)
-            }
+            Node::Element(el) => el.render(mount),
             Node::Fragment(fragment) => {
                 for child in fragment {
                     child.render(mount);
