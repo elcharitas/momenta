@@ -6,7 +6,7 @@ struct CounterProps {
 
 #[component]
 fn Counter(CounterProps { count }: &CounterProps) -> Node {
-    let mut count = count.clone(); // this is zero-copy because it's a signal
+    let mut count = *count; // this is zero-copy because it's a signal
     let increment = move |_| {
         count += 1;
     };

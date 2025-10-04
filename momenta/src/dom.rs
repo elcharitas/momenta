@@ -45,21 +45,25 @@ mod element_cache {
 #[cfg(feature = "wasm")]
 trait WasmRender {
     fn render(&self, mount: &web_sys::Element) -> Option<web_sys::Element>;
+    fn diff_and_patch(
+        &self,
+        old_element: &web_sys::Element,
+        mount: &web_sys::Element,
+    ) -> Option<web_sys::Element>;
 }
 
 #[cfg(feature = "wasm")]
 impl WasmRender for crate::nodes::Element {
     fn render(&self, mount: &web_sys::Element) -> Option<web_sys::Element> {
         let element = web_sys::window()
-            .map(|window| window.document().map(|doc| doc.create_element(self.tag())))
-            .flatten()
+            .and_then(|window| window.document().map(|doc| doc.create_element(self.tag())))
             .and_then(|el| el.ok());
 
         if let Some(element) = element {
             let _ = mount.append_child(&element);
             let dangerous_inner_html = self.html();
             if !dangerous_inner_html.is_empty() {
-                element.set_inner_html(&dangerous_inner_html);
+                element.set_inner_html(dangerous_inner_html);
             }
             // add attributes
             for (name, value) in self.attributes() {
@@ -82,6 +86,73 @@ impl WasmRender for crate::nodes::Element {
         }
         None
     }
+
+    fn diff_and_patch(
+        &self,
+        old_element: &web_sys::Element,
+        _mount: &web_sys::Element,
+    ) -> Option<web_sys::Element> {
+        // Check if tag name changed - if so, replace entire element
+        if old_element.tag_name().to_lowercase() != self.tag() {
+            if let Some(parent) = old_element.parent_element() {
+                let _ = parent.remove_child(old_element);
+                return self.render(&parent);
+            }
+            return None;
+        }
+
+        // Diff and patch attributes
+        // Remove old attributes that are no longer present
+        let old_attrs = old_element.attributes();
+        for i in 0..old_attrs.length() {
+            if let Some(attr) = old_attrs.item(i) {
+                let attr_name = attr.name();
+                if !self.attributes().contains_key(&attr_name) {
+                    let _ = old_element.remove_attribute(&attr_name);
+                }
+            }
+        }
+
+        // Add or update new attributes
+        for (name, value) in self.attributes() {
+            if old_element.get_attribute(name).as_deref() != Some(value) {
+                let _ = old_element.set_attribute(name, value);
+            }
+        }
+
+        // Update innerHTML if different
+        let dangerous_inner_html = self.html();
+        if !dangerous_inner_html.is_empty() && old_element.inner_html() != *dangerous_inner_html {
+            old_element.set_inner_html(dangerous_inner_html);
+        }
+
+        // Re-attach event handlers (this is crucial for reactivity)
+        // Note: We need to remove old event listeners first, but since we can't easily
+        // track them, we'll rely on the fact that reassigning works in most cases
+        for (event_type, callback) in self.events() {
+            attach_event_handler(old_element, event_type, callback.clone());
+        }
+
+        // Diff and patch children (if no innerHTML)
+        if dangerous_inner_html.is_empty() {
+            // Simple approach: re-render children
+            // TODO: Implement more sophisticated child diffing
+            while let Some(child) = old_element.first_child() {
+                old_element.remove_child(&child).ok();
+            }
+            for child in self.children() {
+                child.render(old_element);
+            }
+        }
+
+        // Update cache
+        element_cache::with_cache(|cache| {
+            use alloc::string::ToString;
+            cache.insert(self.key().to_string(), old_element.clone());
+        });
+
+        Some(old_element.clone())
+    }
 }
 
 #[cfg(feature = "wasm")]
@@ -90,21 +161,45 @@ impl WasmRender for Node {
         match self {
             Node::Text(text) => {
                 let current_text = mount.text_content().unwrap_or_default();
-                mount.set_text_content(Some(&(current_text + &text)));
-                return None;
+                mount.set_text_content(Some(&(current_text + text)));
+                None
             }
-            Node::Element(el) => {
-                return el.render(mount);
-            }
+            Node::Element(el) => el.render(mount),
             Node::Fragment(fragment) => {
                 for child in fragment {
                     child.render(mount);
                 }
-                return None;
+                None
             }
             Node::Comment(_) => {
                 // TODO: implement comment rendering
-                return None;
+                None
+            }
+            _ => None,
+        }
+    }
+
+    fn diff_and_patch(
+        &self,
+        old_element: &web_sys::Element,
+        mount: &web_sys::Element,
+    ) -> Option<web_sys::Element> {
+        match self {
+            Node::Text(text) => {
+                if old_element.text_content().as_deref() != Some(text) {
+                    old_element.set_text_content(Some(text));
+                }
+                None
+            }
+            Node::Element(el) => el.diff_and_patch(old_element, mount),
+            Node::Fragment(_) => {
+                // For fragments, use full re-render for now
+                if let Some(parent) = old_element.parent_element() {
+                    let _ = parent.remove_child(old_element);
+                    self.render(&parent)
+                } else {
+                    None
+                }
             }
             _ => None,
         }
@@ -175,7 +270,7 @@ where
         let window = web_sys::window().expect("no global `window` exists");
         let document = window.document().expect("should have a document on window");
         let mount_point = document
-            .query_selector(&selectors)
+            .query_selector(selectors)
             .expect("couldn't find element")
             .expect("couldn't find element");
         // clear mount point
@@ -253,19 +348,10 @@ where
                 if let Some(existing_el) =
                     element_cache::with_cache(|cache| cache.get(el.key()).cloned())
                 {
-                    // Check if element content has actually changed
-                    if existing_el.tag_name().to_lowercase() == el.tag()
-                        && existing_el.inner_html() == *el.html()
-                        && el.attributes().iter().all(|(name, value)| {
-                            existing_el.get_attribute(name).as_deref() == Some(value)
-                        })
-                    {
-                        return; // Skip re-render if nothing changed
-                    }
-
+                    // Use diff and patch for more efficient updates
                     if let Some(parent) = existing_el.parent_element() {
-                        parent.remove_child(&existing_el).ok();
-                        el.render(&parent);
+                        el.diff_and_patch(&existing_el, &parent);
+                        return;
                     }
                 }
             }
@@ -294,10 +380,6 @@ macro_rules! derive_elements {
 
             $crate::paste! {
                 #[derive(Default)]
-                /// HTML Element Properties with comprehensive attributes and event handlers.
-                ///
-                /// This struct provides a type-safe way to define HTML element properties,
-                /// including global attributes, ARIA accessibility features, and event handlers.
                 #[allow(non_snake_case)]
                 pub struct [<HTML $tag:camel Element Props>] {
                     // ============================================================================
@@ -313,7 +395,7 @@ macro_rules! derive_elements {
                     /// - Form label associations
                     ///
                     /// ### Examples
-                    /// ```
+                    /// ```rust ignore
                     /// id="navigation-menu"
                     /// id="user-profile-form"
                     /// ```
@@ -327,7 +409,7 @@ macro_rules! derive_elements {
                     /// by providing a stable identity for elements across re-renders.
                     ///
                     /// ### Examples
-                    /// ```
+                    /// ```rust ignore
                     /// key="user-123"
                     /// key={format!("item-{}", index)}
                     /// ```
@@ -341,7 +423,7 @@ macro_rules! derive_elements {
                     /// - Semantic grouping of elements
                     ///
                     /// ### Examples
-                    /// ```
+                    /// ```rust ignore
                     /// class="btn btn-primary"
                     /// class="container mx-auto p-4 bg-white shadow-lg"
                     /// ```
@@ -368,7 +450,7 @@ macro_rules! derive_elements {
                     /// - Overriding external styles
                     ///
                     /// ### Examples
-                    /// ```
+                    /// ```rust ignore
                     /// style="color: red; font-weight: bold;"
                     /// style={format!("width: {}px; height: {}px;", width, height)}
                     /// ```
@@ -382,7 +464,7 @@ macro_rules! derive_elements {
                     /// providing context for users with screen readers.
                     ///
                     /// ### Examples
-                    /// ```
+                    /// ```rust ignore
                     /// title="Click to expand details"
                     /// title="Last updated: March 15, 2024"
                     /// ```
@@ -400,7 +482,7 @@ macro_rules! derive_elements {
                     /// For images, this sets the intrinsic width.
                     ///
                     /// ### Examples
-                    /// ```
+                    /// ```rust ignore
                     /// width="300"        // 300 pixels
                     /// width="100%"       // Full width
                     /// width="50vw"       // 50% of viewport width
@@ -415,7 +497,7 @@ macro_rules! derive_elements {
                     /// For images, this sets the intrinsic height.
                     ///
                     /// ### Examples
-                    /// ```
+                    /// ```rust ignore
                     /// height="200"       // 200 pixels
                     /// height="auto"      // Automatic height
                     /// height="50vh"      // 50% of viewport height
@@ -434,7 +516,7 @@ macro_rules! derive_elements {
                     /// Useful for creating interactive interfaces with drag-and-drop functionality.
                     ///
                     /// ### Examples
-                    /// ```
+                    /// ```rust ignore
                     /// draggable={true}   // Element can be dragged
                     /// draggable={false}  // Element cannot be dragged (default)
                     /// ```
@@ -448,7 +530,7 @@ macro_rules! derive_elements {
                     /// This is different from `visibility: hidden` which still takes up space.
                     ///
                     /// ### Examples
-                    /// ```
+                    /// ```rust ignore
                     /// hidden={false}  // Element is visible (default)
                     /// hidden={true}   // Element is completely hidden
                     /// ```
@@ -462,7 +544,7 @@ macro_rules! derive_elements {
                     /// to important elements using Alt+key (varies by browser/OS).
                     ///
                     /// ### Examples
-                    /// ```
+                    /// ```rust ignore
                     /// accesskey="s"  // Alt+S to focus (search)
                     /// accesskey="m"  // Alt+M to focus (menu)
                     /// ```
@@ -476,7 +558,7 @@ macro_rules! derive_elements {
                     /// the content directly in the browser.
                     ///
                     /// ### Examples
-                    /// ```
+                    /// ```rust ignore
                     /// contenteditable={false}  // Content cannot be edited (default)
                     /// contenteditable={true}   // Content can be edited by user
                     /// ```
@@ -490,7 +572,7 @@ macro_rules! derive_elements {
                     /// languages like Arabic, Hebrew, or Persian.
                     ///
                     /// ### Examples
-                    /// ```
+                    /// ```rust ignore
                     /// dir="ltr"   // Left-to-right (default)
                     /// dir="rtl"   // Right-to-left
                     /// dir="auto"  // Auto-detect direction
@@ -508,7 +590,7 @@ macro_rules! derive_elements {
                     /// - `Some(-1)`: Element is focusable only programmatically
                     ///
                     /// ### Examples
-                    /// ```
+                    /// ```rust ignore
                     /// tabindex: None        // Natural tab order
                     /// tabindex: Some(0)     // Focusable in natural order
                     /// tabindex: Some(1)     // Focus first
@@ -524,7 +606,7 @@ macro_rules! derive_elements {
                     /// elements like input fields or contenteditable elements.
                     ///
                     /// ### Examples
-                    /// ```
+                    /// ```rust ignore
                     /// spellcheck={true}   // Enable spell checking
                     /// spellcheck={false}  // Disable spell checking
                     /// ```
@@ -538,7 +620,7 @@ macro_rules! derive_elements {
                     /// Uses BCP 47 language tags (e.g., "en", "es", "fr-CA").
                     ///
                     /// ### Examples
-                    /// ```
+                    /// ```rust ignore
                     /// lang="en"      // English
                     /// lang="es"      // Spanish
                     /// lang="fr-CA"   // Canadian French
@@ -554,7 +636,7 @@ macro_rules! derive_elements {
                     /// when the page is automatically translated.
                     ///
                     /// ### Examples
-                    /// ```
+                    /// ```rust ignore
                     /// translate={true}   // Content should be translated (default)
                     /// translate={false}  // Content should not be translated (e.g., code, names)
                     /// ```
@@ -568,7 +650,7 @@ macro_rules! derive_elements {
                     /// for input fields and editable content.
                     ///
                     /// ### Examples
-                    /// ```
+                    /// ```rust ignore
                     /// autocapitalize="off"        // No automatic capitalization
                     /// autocapitalize="none"       // Same as "off"
                     /// autocapitalize="sentences"  // Capitalize first letter of sentences
@@ -585,7 +667,7 @@ macro_rules! derive_elements {
                     /// crucial for screen readers and assistive technologies.
                     ///
                     /// ### Examples
-                    /// ```
+                    /// ```rust ignore
                     /// role="button"       // Element acts as a button
                     /// role="navigation"   // Element contains navigation links
                     /// role="main"         // Element is the main content
@@ -613,7 +695,7 @@ macro_rules! derive_elements {
                     /// active or selected (e.g., current page in navigation).
                     ///
                     /// ### Examples
-                    /// ```
+                    /// ```rust ignore
                     /// aria_current="page"      // Current page in navigation
                     /// aria_current="step"      // Current step in a process
                     /// aria_current="location"  // Current location in a path
@@ -632,7 +714,7 @@ macro_rules! derive_elements {
                     /// purpose. Essential for buttons with only icons or complex interfaces.
                     ///
                     /// ### Examples
-                    /// ```
+                    /// ```rust ignore
                     /// aria_label="Close dialog"           // For X button
                     /// aria_label="Search products"        // For search input
                     /// aria_label="User profile menu"      // For profile dropdown
@@ -648,7 +730,7 @@ macro_rules! derive_elements {
                     /// Multiple IDs can be separated by spaces.
                     ///
                     /// ### Examples
-                    /// ```
+                    /// ```rust ignore
                     /// aria_labelledby="username-label"           // Single label
                     /// aria_labelledby="first-name last-name"     // Multiple labels
                     /// aria_labelledby="section-title section-subtitle"
@@ -663,7 +745,7 @@ macro_rules! derive_elements {
                     /// Used for help text, error messages, or detailed descriptions.
                     ///
                     /// ### Examples
-                    /// ```
+                    /// ```rust ignore
                     /// aria_describedby="password-help"           // Help text
                     /// aria_describedby="email-error"             // Error message
                     /// aria_describedby="form-help form-note"     // Multiple descriptions
@@ -678,7 +760,7 @@ macro_rules! derive_elements {
                     /// Critical for screen readers to understand the state of expandable elements.
                     ///
                     /// ### Examples
-                    /// ```
+                    /// ```rust ignore
                     /// aria_expanded={true}   // Element is expanded/open
                     /// aria_expanded={false}  // Element is collapsed/closed
                     /// ```
@@ -692,7 +774,7 @@ macro_rules! derive_elements {
                     /// Important for multi-select interfaces and custom select components.
                     ///
                     /// ### Examples
-                    /// ```
+                    /// ```rust ignore
                     /// aria_selected={true}   // Item is selected
                     /// aria_selected={false}  // Item is not selected
                     /// ```
@@ -706,7 +788,7 @@ macro_rules! derive_elements {
                     /// native HTML form elements.
                     ///
                     /// ### Examples
-                    /// ```
+                    /// ```rust ignore
                     /// aria_checked="true"   // Element is checked
                     /// aria_checked="false"  // Element is not checked
                     /// aria_checked="mixed"  // Element is in indeterminate state
@@ -721,7 +803,7 @@ macro_rules! derive_elements {
                     /// Use carefully - only hide decorative content, never interactive elements.
                     ///
                     /// ### Examples
-                    /// ```
+                    /// ```rust ignore
                     /// aria_hidden={false}  // Element is accessible (default)
                     /// aria_hidden={true}   // Element is hidden from assistive technology
                     /// ```
@@ -735,7 +817,7 @@ macro_rules! derive_elements {
                     /// is activated, helping users understand the interaction.
                     ///
                     /// ### Examples
-                    /// ```
+                    /// ```rust ignore
                     /// aria_haspopup="false"   // No popup (default)
                     /// aria_haspopup="true"    // Generic popup/menu
                     /// aria_haspopup="menu"    // Context menu
@@ -765,7 +847,7 @@ macro_rules! derive_elements {
                     /// Fired when the user clicks on the element (mouse down + mouse up).
                     ///
                     /// ### Examples
-                    /// ```
+                    /// ```rust ignore
                     /// on:click={|_| {
                     ///     log!("Button clicked!");
                     /// }}
@@ -778,7 +860,7 @@ macro_rules! derive_elements {
                     /// Fired when a key is pressed down while the element has focus.
                     ///
                     /// ### Examples
-                    /// ```
+                    /// ```rust ignore
                     /// on:keydown={|_| {
                     ///     log!("Key down!");
                     /// }}
@@ -791,7 +873,7 @@ macro_rules! derive_elements {
                     /// Fired when a key is released while the element has focus.
                     ///
                     /// ### Examples
-                    /// ```
+                    /// ```rust ignore
                     /// on:keyup={|_| {
                     ///     log!("Key up!");
                     /// }}
@@ -810,7 +892,7 @@ macro_rules! derive_elements {
                     /// Fired when the element receives focus.
                     ///
                     /// ### Examples
-                    /// ```
+                    /// ```rust ignore
                     /// on:focus={|_| {
                     ///     log!("Button focused!");
                     /// }}
@@ -823,7 +905,7 @@ macro_rules! derive_elements {
                     /// Fired when the element loses focus.
                     ///
                     /// ### Examples
-                    /// ```
+                    /// ```rust ignore
                     /// on:blur={|_| {
                     ///     log!("Button out of focus!");
                     /// }}
@@ -836,7 +918,7 @@ macro_rules! derive_elements {
                     /// Fired when the value of an input element changes and loses focus.
                     ///
                     /// ### Examples
-                    /// ```
+                    /// ```rust ignore
                     /// on:change={|_| {
                     ///     log!("Value changed!");
                     /// }}
@@ -849,7 +931,7 @@ macro_rules! derive_elements {
                     /// Fired when the value of an input element changes (on every keystroke).
                     ///
                     /// ### Examples
-                    /// ```
+                    /// ```rust ignore
                     /// on:input={|_| {
                     ///     log!("Value changed!");
                     /// }}
@@ -862,7 +944,7 @@ macro_rules! derive_elements {
                     /// Fired when a form is submitted.
                     ///
                     /// ### Examples
-                    /// ```
+                    /// ```rust ignore
                     /// on:submit={|_| {
                     ///     log!("Form submitted!");
                     /// }}
@@ -1006,6 +1088,7 @@ macro_rules! derive_elements {
                     )*
                 }
 
+                #[allow(deprecated)]
                 impl [<HTML $tag:camel Element Props>] {
                     fn to_attributes(&self) -> alloc::collections::BTreeMap<String, String> {
                         #[allow(unused_imports)]
@@ -1153,6 +1236,7 @@ macro_rules! derive_elements {
                     }
                 }
 
+                #[allow(deprecated)]
                 impl $crate::nodes::Component for $tag {
                     type Props = [<HTML $tag:camel Element Props>];
 

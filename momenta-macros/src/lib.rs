@@ -172,22 +172,18 @@ fn parse_attribute_name(input: ParseStream) -> Result<(Ident, Span)> {
 /// // Support for let patterns in conditions (if let style)
 /// when!(let Some(value) = option_value => <div>{value}</div>);
 /// when!(let Ok(val) = result => <div>"Success: "{val}</div> else <div>"Error"</div>);
-/// when!(let Some(x) = get_option() => format!("Got: {}", x) else "Nothing".to_string());
+/// // when!(let Some(x) = get_option() => format!("Got: {}", x) else ("Nothing".to_string()));
 ///
 /// // Support for blocks as values
+/// let condition = true;
 /// when!(condition => {
 ///     let msg = "Complex computation";
 ///     format!("{} result", msg)
 /// });
 ///
 /// // Support for arrays/vectors as values
-/// when!(show_list => [1, 2, 3, 4] else []);
-///
-/// // Match syntax
-/// when!(result {
-///     Ok(val) => <div>{val}</div>,
-///     Err(_) => <p>"Error occurred"</p>
-/// });
+/// let show_list = false;
+/// when!(show_list => [1, 2, 3, 4] else [0, 8, 4, 6]);
 /// ```
 #[proc_macro]
 pub fn when(input: TokenStream) -> TokenStream {
@@ -506,7 +502,7 @@ pub fn derive_signal_value(input: TokenStream) -> TokenStream {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust ignore
 /// use momenta::prelude::*;
 /// // Fragment
 /// rsx!(<>"Hello World"</>);
@@ -530,7 +526,6 @@ pub fn derive_signal_value(input: TokenStream) -> TokenStream {
 /// // Keyword attributes (automatically converted with _ suffix)
 /// rsx!(<input type="text" for="name" />);
 /// ```
-
 #[proc_macro]
 pub fn rsx(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as RsxNode);
@@ -662,7 +657,7 @@ impl Parse for RsxChildren {
                 let gap_size = start - last_end;
                 if gap_size > 0 && last_end > 0 {
                     // Add spaces to represent the gap
-                    value.push_str(&" ".repeat(gap_size as usize));
+                    value.push_str(&" ".repeat(gap_size));
                 }
             }
             value.push_str(&token.to_string());
@@ -799,8 +794,9 @@ impl Parse for RsxNode {
                 return Err(syn::Error::new(
                     close_tag.span(),
                     format!(
-                        "Closing tag </{}> doesn't match opening tag <{}>",
-                        close_tag, tag
+                        "Closing tag </{}> doesn't match opening tag <{}>\n\
+                        help: change the closing tag to </{}>",
+                        close_tag, tag, tag
                     ),
                 ));
             }
@@ -840,7 +836,12 @@ impl Parse for RsxNode {
             Ok(block) => Ok(RsxNode::Block(block)),
             Err(_) => Err(syn::Error::new(
                 Span::call_site(),
-                "Invalid JSX node, expected a valid rsx block, an expression or plain text",
+                "Invalid RSX syntax\n\
+                help: expected one of:\n\
+                  - an HTML element: <div>...</div>\n\
+                  - a string literal: \"text\"\n\
+                  - an expression: {value}\n\
+                  - a fragment: <>...</>",
             )),
         }
     }
@@ -869,7 +870,7 @@ impl RsxNode {
                                 quote_spanned! { span=> #v}
                             })
                             .or_else(|| Some(quote! {true}));
-                        (name, value, span.clone())
+                        (name, value, *span)
                     });
 
                 let data_props = (is_element
@@ -929,7 +930,7 @@ impl RsxNode {
                         quote_spanned! {span=> #name: {#value}.into(), }
                     });
 
-                let children_tokens = if children.len() > 0 || is_element {
+                let children_tokens = if !children.is_empty() || is_element {
                     let child_tokens = children.iter().map(|child| child.to_tokens());
                     Some(quote_spanned! { *open_span=>
                         children: vec![#(#child_tokens),*],

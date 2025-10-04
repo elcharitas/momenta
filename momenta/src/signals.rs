@@ -29,6 +29,8 @@ static NEXT_SCOPE_ID: Mutex<usize> = Mutex::new(1);
 static SCOPE_SIGNAL_COUNTERS: Mutex<BTreeMap<usize, usize>> = Mutex::new(BTreeMap::new());
 /// Effect counter per scope
 static SCOPE_EFFECT_COUNTERS: Mutex<BTreeMap<usize, usize>> = Mutex::new(BTreeMap::new());
+/// Batch update flag - when true, don't trigger re-renders immediately
+static BATCH_UPDATES: Mutex<bool> = Mutex::new(false);
 
 /// All signal values by (scope_id, signal_id)
 static SIGNALS: Mutex<BTreeMap<(usize, usize), StoredValue>> = Mutex::new(BTreeMap::new());
@@ -44,6 +46,9 @@ static SCOPE_CALLBACKS: Mutex<BTreeMap<usize, Arc<dyn Fn(&Node) + Send + Sync>>>
 /// Effects by (scope_id, effect_id)
 static SCOPE_EFFECTS: Mutex<BTreeMap<(usize, usize), Box<dyn Fn() + Send>>> =
     Mutex::new(BTreeMap::new());
+/// Effect cleanup functions by (scope_id, effect_id)
+static SCOPE_EFFECT_CLEANUPS: Mutex<BTreeMap<(usize, usize), Box<dyn FnOnce() + Send>>> =
+    Mutex::new(BTreeMap::new());
 
 /// Which signals each scope depends on
 static SCOPE_DEPENDENCIES: Mutex<BTreeMap<usize, BTreeSet<(usize, usize)>>> =
@@ -53,6 +58,11 @@ static SIGNAL_DEPENDENCIES: Mutex<BTreeMap<(usize, usize), BTreeSet<usize>>> =
     Mutex::new(BTreeMap::new());
 /// Scopes waiting to re-render
 static PENDING_SCOPE_RENDERS: Mutex<BTreeSet<usize>> = Mutex::new(BTreeSet::new());
+/// Memoized computation results
+#[allow(dead_code)]
+static MEMO_CACHE: Mutex<BTreeMap<String, Box<dyn SignalValue>>> = Mutex::new(BTreeMap::new());
+/// Currently executing effects (to prevent infinite loops)
+static EXECUTING_EFFECTS: Mutex<BTreeSet<(usize, usize)>> = Mutex::new(BTreeSet::new());
 
 //==============================================================================
 // TRAITS
@@ -231,6 +241,31 @@ impl<T: SignalValue + PartialEq + Clone + 'static> Signal<Vec<T>> {
         result
     }
 
+    /// Insert an item at the specified index
+    pub fn insert(&self, index: usize, item: T) {
+        let mut vec = self.get();
+        vec.insert(index, item);
+        self.set(vec);
+    }
+
+    /// Remove and return the item at the specified index
+    pub fn remove(&self, index: usize) -> T {
+        let mut vec = self.get();
+        let result = vec.remove(index);
+        self.set(vec);
+        result
+    }
+
+    /// Retain only the elements that satisfy the predicate
+    pub fn retain<F>(&self, f: F)
+    where
+        F: FnMut(&T) -> bool,
+    {
+        let mut vec = self.get();
+        vec.retain(f);
+        self.set(vec);
+    }
+
     /// Get the length of the vector
     pub fn len(&self) -> usize {
         self.with(|v| v.len()).unwrap_or(0)
@@ -244,6 +279,48 @@ impl<T: SignalValue + PartialEq + Clone + 'static> Signal<Vec<T>> {
     /// Clear the vector
     pub fn clear(&self) {
         self.set(Vec::new());
+    }
+
+    /// Get element at index
+    pub fn get_at(&self, index: usize) -> Option<T> {
+        self.with(|v| v.get(index).cloned()).unwrap_or(None)
+    }
+
+    /// Update element at index
+    pub fn update_at(&self, index: usize, item: T) {
+        let mut vec = self.get();
+        if index < vec.len() {
+            vec[index] = item;
+            self.set(vec);
+        }
+    }
+}
+
+// Vector sorting methods (requires Ord)
+impl<T: SignalValue + PartialEq + Clone + Ord + 'static> Signal<Vec<T>> {
+    /// Sort the vector in ascending order
+    pub fn sort(&self) {
+        let mut vec = self.get();
+        vec.sort();
+        self.set(vec);
+    }
+
+    /// Sort the vector by a key function
+    pub fn sort_by_key<K, F>(&self, f: F)
+    where
+        K: Ord,
+        F: FnMut(&T) -> K,
+    {
+        let mut vec = self.get();
+        vec.sort_by_key(f);
+        self.set(vec);
+    }
+
+    /// Reverse the order of elements
+    pub fn reverse(&self) {
+        let mut vec = self.get();
+        vec.reverse();
+        self.set(vec);
     }
 }
 
@@ -272,6 +349,27 @@ impl<T: SignalValue + Clone + 'static> Signal<Vec<T>> {
 }
 
 impl<T: SignalValue + 'static> Signal<T> {
+    /// Map the signal value to a new computed signal
+    ///
+    /// # Example
+    /// ```rust,no_run
+    /// use momenta::signals::create_signal;
+    ///
+    /// let count = create_signal(5);
+    /// let doubled = count.derive(|&x| x * 2);
+    /// assert_eq!(doubled.get(), 10);
+    /// ```
+    #[cfg(any(feature = "computed", feature = "full-reactivity"))]
+    pub fn derive<U, F>(&self, f: F) -> Signal<U>
+    where
+        T: Clone + PartialEq,
+        U: SignalValue + PartialEq + Clone + 'static,
+        F: Fn(&T) -> U + Send + 'static,
+    {
+        let self_clone = self.clone();
+        create_computed(move || self_clone.with(|val| f(val)).unwrap())
+    }
+
     /// Access signal value immutably
     pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> Option<R> {
         if let Some(current_scope) = get_current_scope() {
@@ -279,15 +377,12 @@ impl<T: SignalValue + 'static> Signal<T> {
                 let mut signal_deps = SIGNAL_DEPENDENCIES.lock();
                 signal_deps
                     .entry(self.id)
-                    .or_insert_with(BTreeSet::new)
+                    .or_default()
                     .insert(current_scope);
             }
             {
                 let mut scope_deps = SCOPE_DEPENDENCIES.lock();
-                scope_deps
-                    .entry(current_scope)
-                    .or_insert_with(BTreeSet::new)
-                    .insert(self.id);
+                scope_deps.entry(current_scope).or_default().insert(self.id);
             }
         }
 
@@ -300,7 +395,7 @@ impl<T: SignalValue + 'static> Signal<T> {
                     .as_any()
                     .and_then(|any| any.downcast_ref::<T>())
             })
-            .map(|val| f(val))
+            .map(f)
     }
 
     /// Update signal value and trigger re-renders if changed
@@ -334,7 +429,9 @@ impl<T: SignalValue + 'static> Signal<T> {
                 changes.insert(self.id);
             }
 
-            if get_current_scope().is_none() {
+            // Only render immediately if we're not batching and not inside a scope
+            let should_batch = *BATCH_UPDATES.lock();
+            if !should_batch && get_current_scope().is_none() {
                 render_scope(self.id.0);
             }
         }
@@ -351,6 +448,135 @@ impl<T: SignalValue + 'static> Signal<T> {
 
 struct StoredValue {
     value: Box<dyn SignalValue>,
+}
+
+//==============================================================================
+// BATCH UPDATES
+//==============================================================================
+
+/// Run a function with batched updates enabled
+/// All signal updates within the function will be batched and applied at the end
+///
+/// # Example
+/// ```ignore
+/// use momenta::signals::{create_signal, batch};
+///
+/// // Within a component scope:
+/// let count = create_signal(0);
+/// let text = create_signal("hello");
+///
+/// batch(|| {
+///     count.set(1);  // Won't trigger re-render yet
+///     count.set(2);  // Won't trigger re-render yet
+///     text.set("world");  // Won't trigger re-render yet
+/// }); // All changes applied and single re-render triggered here
+/// ```
+pub fn batch<F, R>(f: F) -> R
+where
+    F: FnOnce() -> R,
+{
+    {
+        let mut batch_flag = BATCH_UPDATES.lock();
+        *batch_flag = true;
+    }
+
+    let result = f();
+
+    {
+        let mut batch_flag = BATCH_UPDATES.lock();
+        *batch_flag = false;
+    }
+
+    // Process all pending renders
+    process_pending_renders();
+
+    result
+}
+
+//==============================================================================
+// MEMOIZATION
+//==============================================================================
+
+/// Create a memoized computation that caches results based on dependencies
+///
+/// The computation is only re-run when dependencies change. Results are cached.
+///
+/// # Example
+/// ```rust,no_run
+/// use momenta::signals::{create_signal, create_memo};
+///
+/// let count = create_signal(5);
+/// let expensive = create_memo(
+///     "double_count",
+///     move || {
+///         // Expensive computation
+///         count.get() * 2
+///     }
+/// );
+/// ```
+#[cfg(any(feature = "memoization", feature = "full-reactivity"))]
+pub fn create_memo<T, F>(key: &str, computation: F) -> Signal<T>
+where
+    T: SignalValue + PartialEq + Clone + 'static,
+    F: Fn() -> T + Send + 'static,
+{
+    let scope_id = get_current_scope()
+        .ok_or(SignalCreationError::OutsideScope)
+        .unwrap();
+    let signal_id = get_next_signal_id_for_scope(scope_id);
+    let signal = Signal {
+        id: (scope_id, signal_id),
+        _marker: PhantomData,
+    };
+
+    let cache_key = alloc::format!("{}-{}", key, scope_id);
+
+    // Check cache first
+    {
+        let cache = MEMO_CACHE.lock();
+        if let Some(cached) = cache.get(&cache_key) {
+            if let Some(cached_val) = cached.as_any().and_then(|any| any.downcast_ref::<T>()) {
+                let mut signals = SIGNALS.lock();
+                signals.insert(
+                    signal.id,
+                    StoredValue {
+                        value: Box::new(cached_val.clone()),
+                    },
+                );
+                return signal;
+            }
+        }
+    }
+
+    // Compute and cache
+    let initial_value = computation();
+    {
+        let mut cache = MEMO_CACHE.lock();
+        cache.insert(cache_key.clone(), Box::new(initial_value.clone()));
+    }
+
+    {
+        let mut signals = SIGNALS.lock();
+        signals.insert(
+            signal.id,
+            StoredValue {
+                value: Box::new(initial_value),
+            },
+        );
+    }
+
+    // Update cache when dependencies change
+    let signal_clone = signal.clone();
+    create_effect(move || {
+        let new_value = computation();
+        {
+            let mut cache = MEMO_CACHE.lock();
+            cache.insert(cache_key.clone(), Box::new(new_value.clone()));
+        }
+        signal_clone.set(new_value);
+    });
+
+    signal
 }
 
 //==============================================================================
@@ -417,6 +643,58 @@ where
     signal
 }
 
+/// Create a computed/derived signal that automatically updates based on dependencies
+///
+/// The computation function is re-run whenever any signal it reads changes.
+///
+/// # Example
+/// ```rust,no_run
+/// use momenta::signals::{create_signal, create_computed};
+///
+/// let count = create_signal(0);
+/// let doubled = create_computed(move || count.get() * 2);
+///
+/// assert_eq!(doubled.get(), 0);
+/// count.set(5);
+/// assert_eq!(doubled.get(), 10);
+/// ```
+#[cfg(any(feature = "computed", feature = "full-reactivity"))]
+pub fn create_computed<T, F>(computation: F) -> Signal<T>
+where
+    T: SignalValue + PartialEq + Clone + 'static,
+    F: Fn() -> T + Send + 'static,
+{
+    let scope_id = get_current_scope()
+        .ok_or(SignalCreationError::OutsideScope)
+        .unwrap();
+    let signal_id = get_next_signal_id_for_scope(scope_id);
+    let signal = Signal {
+        id: (scope_id, signal_id),
+        _marker: PhantomData,
+    };
+
+    // Initialize with first computation
+    {
+        let mut signals = SIGNALS.lock();
+        let initial_value = computation();
+        signals.insert(
+            signal.id,
+            StoredValue {
+                value: Box::new(initial_value),
+            },
+        );
+    }
+
+    // Create effect to recompute when dependencies change
+    let signal_clone = signal.clone();
+    create_effect(move || {
+        let new_value = computation();
+        signal_clone.set(new_value);
+    });
+
+    signal
+}
+
 //==============================================================================
 // EFFECTS
 //==============================================================================
@@ -427,6 +705,17 @@ struct Effect {
 }
 
 /// Create effect that runs when dependencies change
+///
+/// # Example
+/// ```ignore
+/// use momenta::signals::{create_signal, create_effect};
+///
+/// // Within a component scope:
+/// let count = create_signal(0);
+/// create_effect(move || {
+///     println!("Count changed to: {}", count.get());
+/// });
+/// ```
 pub fn create_effect(effect: impl Fn() + Send + 'static) {
     let scope_id = get_current_scope()
         .ok_or(SignalCreationError::OutsideScope)
@@ -439,6 +728,61 @@ pub fn create_effect(effect: impl Fn() + Send + 'static) {
     {
         let mut effects = SCOPE_EFFECTS.lock();
         effects.insert(effect_struct.id, Box::new(effect));
+    }
+}
+
+/// Create effect with cleanup function
+///
+/// The cleanup function is called when the scope is destroyed or before the effect re-runs.
+///
+/// # Example
+/// ```ignore
+/// use momenta::signals::{create_signal, create_effect_with_cleanup};
+///
+/// // Within a component scope:
+/// let count = create_signal(0);
+/// create_effect_with_cleanup(
+///     move || {
+///         println!("Setting up for count: {}", count.get());
+///         // Return cleanup function
+///         move || {
+///             println!("Cleaning up");
+///         }
+///     }
+/// );
+/// ```
+pub fn create_effect_with_cleanup<C>(effect: impl Fn() -> C + Send + 'static)
+where
+    C: FnOnce() + Send + 'static,
+{
+    let scope_id = get_current_scope()
+        .ok_or(SignalCreationError::OutsideScope)
+        .unwrap();
+    let effect_id = get_next_effect_id_for_scope(scope_id);
+    let effect_id_tuple = (scope_id, effect_id);
+
+    {
+        let mut effects = SCOPE_EFFECTS.lock();
+
+        effects.insert(
+            effect_id_tuple,
+            Box::new(move || {
+                // Run previous cleanup if exists
+                {
+                    let mut cleanups = SCOPE_EFFECT_CLEANUPS.lock();
+                    if let Some(cleanup) = cleanups.remove(&effect_id_tuple) {
+                        cleanup();
+                    }
+                }
+
+                // Run effect and store new cleanup
+                let new_cleanup = effect();
+                {
+                    let mut cleanups = SCOPE_EFFECT_CLEANUPS.lock();
+                    cleanups.insert(effect_id_tuple, Box::new(new_cleanup));
+                }
+            }),
+        );
     }
 }
 
@@ -533,6 +877,14 @@ fn render_scope(scope_id: usize) -> Node {
         previous_scope: get_current_scope(),
     };
 
+    // Check if this scope is already being rendered to prevent infinite loops
+    {
+        let rendering_flag = RENDERING_SCOPE.lock();
+        if *rendering_flag == scope_id {
+            return Node::Empty;
+        }
+    }
+
     set_current_scope(Some(scope_id));
 
     if !scope_has_signal_changes(scope_id) {
@@ -617,7 +969,7 @@ fn render_scope(scope_id: usize) -> Node {
                 }
             }
         }
-        
+
         if was_rendering == 0 {
             drop(pending);
             drop(signal_deps);
@@ -629,17 +981,49 @@ fn render_scope(scope_id: usize) -> Node {
 }
 
 fn run_scope_effects(scope_id: usize) {
-    let effects = SCOPE_EFFECTS.lock();
-    effects
-        .iter()
-        .filter(|((effect_scope_id, _), _)| *effect_scope_id == scope_id)
-        .for_each(|(_, effect)| effect());
+    // Collect effect IDs first to avoid holding the lock during execution
+    let effect_ids: Vec<_> = {
+        let effects = SCOPE_EFFECTS.lock();
+        effects
+            .iter()
+            .filter(|((effect_scope_id, _), _)| *effect_scope_id == scope_id)
+            .map(|(id, _)| *id)
+            .collect()
+    };
+
+    // Run each effect without holding the lock
+    for effect_id in effect_ids {
+        // Check if this effect is already executing
+        {
+            let mut executing = EXECUTING_EFFECTS.lock();
+            if executing.contains(&effect_id) {
+                continue; // Skip to prevent infinite loop
+            }
+            executing.insert(effect_id);
+        }
+
+        // Run the effect
+        {
+            let effects = SCOPE_EFFECTS.lock();
+            if let Some(effect) = effects.get(&effect_id) {
+                effect();
+            }
+        }
+
+        // Remove from executing set
+        {
+            let mut executing = EXECUTING_EFFECTS.lock();
+            executing.remove(&effect_id);
+        }
+    }
 }
 
 fn process_pending_renders() {
     while let Some(scope_id) = {
         let mut pending = PENDING_SCOPE_RENDERS.lock();
-        pending.iter().next().copied().map(|id| { pending.remove(&id); id })
+        pending.iter().next().copied().inspect(|id| {
+            pending.remove(id);
+        })
     } {
         render_scope(scope_id);
     }

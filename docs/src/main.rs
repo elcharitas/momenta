@@ -18,9 +18,11 @@ pub enum Page {
     // Core Concepts
     Rsx,
     Signals,
+    ComputedSignals,
     Effects,
     Resources,
     Components,
+    Classes,
 
     // Control Flow
     When,
@@ -124,15 +126,16 @@ fn App() -> Node {
                         Page::Home => <HomePage {current_page} />,
                         Page::GettingStarted => <GettingStartedPage />,
                         Page::Philosophy => <PhilosophyPage />,
-                        Page::Signals => <SignalsPage />,
-                        Page::Effects => <EffectsPage />,
                         Page::Rsx => <RsxPage />,
+                        Page::Signals => <SignalsPage />,
+                        Page::ComputedSignals => <ComputedSignalsPage />,
+                        Page::Effects => <EffectsPage />,
                         Page::Resources => <ResourcesPage />,
+                        Page::Components => <ComponentsPage />,
+                        Page::Classes => <ClassesPage />,
                         Page::When => <ShowPage />,
                         Page::Lists => <ForPage />,
-                        Page::Components => <ComponentsPage />,
                         Page::Performance => <PerformancePage />,
-
                         Page::Deployment => <DeploymentPage />,
                         Page::Counter => <CounterExample />,
                         Page::TodoMVC => <TodoMVCPage />,
@@ -259,10 +262,12 @@ fn Navigation(props: &NavigationProps) -> Node {
             {section("Macros", vec![
                 nav_link(Page::Rsx, "rsx!"),
                 nav_link(Page::Components, "#[component]"),
+                nav_link(Page::Classes, "class!"),
             ])}
 
             {section("Reactive Primitives", vec![
                 nav_link(Page::Signals, "create_signal"),
+                nav_link(Page::ComputedSignals, "create_computed"),
                 nav_link(Page::Effects, "create_effect"),
                 nav_link(Page::Resources, "create_resource"),
             ])}
@@ -492,6 +497,384 @@ pub struct FeatureProps {
 }
 
 #[component]
+fn ComputedSignalsPage() -> Node {
+    rsx! {
+        <article class="mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8">
+            <header class="mb-12">
+                <h1 class="text-4xl font-bold text-gray-900 dark:text-gray-100">Computed Signals</h1>
+                <p class="mt-4 text-lg text-gray-600 dark:text-gray-400">
+                    Computed signals and memoization for efficient reactive computations.
+                </p>
+            </header>
+
+            <section class="prose prose-gray dark:prose-invert max-w-none">
+                <h2 id="introduction">Introduction</h2>
+                <p>
+                    Computed signals are reactive values that automatically recalculate when their dependencies change.
+                    They are perfect for derived state and expensive computations that should be cached.
+                </p>
+
+                <Note variant="info">
+                    <p>
+                        <strong>Feature flags:</strong> Computed signals require the computed or full-reactivity feature flag to be enabled in your Cargo.toml.
+                    </p>
+                </Note>
+
+                <h2 id="create-computed">create_computed</h2>
+                <p>Create signals that automatically update when their dependencies change:</p>
+                <CodeBlock
+                    language="rust"
+                    filename="src/main.rs"
+                    highlight=""
+                    code={r#"use momenta::prelude::*;
+
+#[component]
+fn ShoppingCart() -> Node {
+    let items = create_signal(vec![
+        ("Apple", 1.50, 3),
+        ("Banana", 0.75, 5),
+        ("Orange", 2.00, 2),
+    ]);
+
+    // Computed signal automatically recalculates when items change
+    let total = create_computed(move || {
+        items.get()
+            .iter()
+            .map(|(_, price, qty)| price * (*qty as f64))
+            .sum::<f64>()
+    });
+
+    let item_count = create_computed(move || {
+        items.get().len()
+    });
+
+    rsx! {
+        <div class="shopping-cart">
+            <h2>Shopping Cart</h2>
+            <div class="cart-summary">
+                <p>Items: {item_count}</p>
+                <p>Total: ${format!("{:.2}", total.get())}</p>
+            </div>
+            <button on:click={move |_| {
+                items.push(("Grape", 3.00, 1));
+            }}>
+                Add Grape
+            </button>
+        </div>
+    }
+}"#}
+                />
+
+                <h3 id="derive-method">The derive() Method</h3>
+                <p>Signals have a convenient derive() method for creating computed values:</p>
+                <CodeBlock
+                    language="rust"
+                    filename="src/main.rs"
+                    highlight=""
+                    code={r#"let count = create_signal(5);
+
+// Using derive for simple transformations
+let doubled = count.derive(|&n| n * 2);
+let tripled = count.derive(|&n| n * 3);
+
+// Computed signals update automatically
+count.set(10);
+assert_eq!(doubled.get(), 20);
+assert_eq!(tripled.get(), 30);"#}
+                />
+
+                <h2 id="memoization">Memoization</h2>
+                <p>
+                    Memoization caches expensive computations and only recalculates when dependencies change:
+                </p>
+                <CodeBlock
+                    language="rust"
+                    filename="src/main.rs"
+                    highlight=""
+                    code={r#"use momenta::prelude::*;
+
+let count = create_signal(5);
+
+// Create a memoized computation
+let expensive = create_memo("double_count", move || {
+    // This only runs when dependencies change
+    println!("Computing...");
+    count.get() * 2
+});
+
+// First access computes and caches
+let value = expensive.get(); // Prints "Computing..."
+
+// Second access uses cache
+let value2 = expensive.get(); // No print, uses cached value
+
+// Changing the dependency invalidates cache
+count.set(10); // Next get() will recompute"#}
+                />
+
+                <Note variant="info">
+                    <p>
+                        <strong>Note:</strong> Memoization requires the memoization or full-reactivity feature flag.
+                    </p>
+                </Note>
+
+                <h2 id="comparison">When to Use Each</h2>
+                <h3>Use create_computed when:</h3>
+                <ul>
+                    <li>You need a derived value that updates automatically</li>
+                    <li>The computation is relatively cheap</li>
+                    <li>You want reactive updates throughout your app</li>
+                </ul>
+
+                <h3>Use create_memo when:</h3>
+                <ul>
+                    <li>The computation is expensive</li>
+                    <li>You want explicit caching behavior</li>
+                    <li>You need to optimize performance-critical code</li>
+                </ul>
+
+                <h2 id="best-practices">Best Practices</h2>
+                <ul>
+                    <li>Use create_computed for simple derived values</li>
+                    <li>Use create_memo for expensive computations</li>
+                    <li>Keep computation functions pure (no side effects)</li>
+                    <li>Name your memos descriptively for easier debugging</li>
+                    <li>Avoid circular dependencies between computed signals</li>
+                </ul>
+            </section>
+        </article>
+    }
+}
+
+#[component]
+fn ClassesPage() -> Node {
+    rsx! {
+        <article class="mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8">
+            <header class="mb-12">
+                <h1 class="text-4xl font-bold text-gray-900 dark:text-gray-100">Dynamic Classes</h1>
+                <p class="mt-4 text-lg text-gray-600 dark:text-gray-400">
+                    Learn how to work with dynamic CSS classes using the class! macro and classes() function.
+                </p>
+            </header>
+
+            <section class="prose prose-gray dark:prose-invert max-w-none">
+                <h2 class="font-bold uppercase">Introduction</h2>
+                <p>
+                    Momenta provides two utilities for working with dynamic CSS classes: the class! macro for ergonomic class composition and the classes() function for conditional class application.
+                </p>
+
+                <h2 id="class-macro">The class! Macro</h2>
+                <p>The class! macro provides an elegant way to mix static and conditional CSS classes:</p>
+
+                <h3>Basic Usage</h3>
+                <CodeBlock
+                    language="rust"
+                    filename="src/main.rs"
+                    highlight=""
+                    code={r#"use momenta::prelude::*;
+
+#[component]
+fn Button() -> Node {
+    let is_active = create_signal(true);
+    let is_disabled = create_signal(false);
+
+    rsx! {
+        <button class={class!(
+            "btn",
+            "btn-primary",
+            is_active.get() => "btn-active",
+            is_disabled.get() => "btn-disabled"
+        )}>
+            Click me
+        </button>
+    }
+}"#}
+                />
+
+                <Note variant="info">
+                    <p>
+                        <strong>How it works:</strong> The class! macro evaluates conditions at runtime and includes classes only when their conditions are true. Static classes are always included.
+                    </p>
+                </Note>
+
+                <h3>Syntax Patterns</h3>
+                <CodeBlock
+                    language="rust"
+                    filename="src/main.rs"
+                    highlight=""
+                    code={r#"let is_active = true;
+let is_large = false;
+let has_border = true;
+
+// Mix static and conditional classes
+let class_name = class!(
+    "component",              // Always included
+    "component-base",         // Always included
+    is_active => "active",    // Included if is_active is true
+    is_large => "large",      // Included if is_large is true
+    has_border => "bordered"  // Included if has_border is true
+);
+
+// Result: "component component-base active bordered""#}
+                />
+
+                <h2 id="classes-function">The classes() Function</h2>
+                <p>
+                    The classes() function provides a more explicit way to conditionally apply classes.
+                    It takes a slice of tuples with class names and boolean conditions:
+                </p>
+
+                <h3>Basic Usage</h3>
+                <CodeBlock
+                    language="rust"
+                    filename="src/main.rs"
+                    highlight=""
+                    code={r#"use momenta::nodes::classes;
+
+let is_active = true;
+let is_disabled = false;
+
+let class_name = classes(&[
+    ("btn", true),
+    ("btn-active", is_active),
+    ("btn-disabled", is_disabled),
+]);
+
+// Result: "btn btn-active""#}
+                />
+
+                <h3>Using in Components</h3>
+                <CodeBlock
+                    language="rust"
+                    filename="src/components/badge.rs"
+                    highlight=""
+                    code={r#"use momenta::nodes::classes;
+
+pub struct BadgeProps {
+    pub variant: &'static str,
+    pub is_pill: bool,
+    pub children: Vec<Node>,
+}
+
+#[component]
+fn Badge(props: &BadgeProps) -> Node {
+    let class_name = classes(&[
+        ("badge", true),
+        ("badge-primary", props.variant == "primary"),
+        ("badge-secondary", props.variant == "secondary"),
+        ("badge-success", props.variant == "success"),
+        ("badge-danger", props.variant == "danger"),
+        ("badge-pill", props.is_pill),
+    ]);
+
+    rsx! {
+        <span class={class_name}>
+            {&props.children}
+        </span>
+    }
+}
+
+// Usage
+rsx! {
+    <Badge variant="success" is_pill={true}>
+        Active
+    </Badge>
+}"#}
+                />
+
+                <h2 id="comparison">class! vs classes()</h2>
+                <p>Choose the right tool for your use case:</p>
+
+                <h3>Use class! when:</h3>
+                <ul>
+                    <li>You want concise, inline class composition</li>
+                    <li>Mixing static and conditional classes</li>
+                    <li>Working directly in RSX</li>
+                    <li>Conditions are simple boolean expressions</li>
+                </ul>
+
+                <h3>Use classes() when:</h3>
+                <ul>
+                    <li>You need to compute classes outside of RSX</li>
+                    <li>Working with arrays or dynamic conditions</li>
+                    <li>Sharing class logic across components</li>
+                    <li>Building reusable class utilities</li>
+                </ul>
+
+                <h2 id="real-world-example">Real-World Example</h2>
+                <CodeBlock
+                    language="rust"
+                    filename="src/components/nav.rs"
+                    highlight=""
+                    code={r#"#[component]
+fn Navigation() -> Node {
+    let is_mobile_open = create_signal(false);
+    let current_route = create_signal("/");
+
+    let nav_link = move |href: &'static str, label: &'static str| {
+        let is_active = current_route.get() == href;
+
+        rsx! {
+            <a
+                href={href}
+                class={class!(
+                    "nav-link",
+                    is_active => "nav-link-active",
+                    is_active => "font-bold"
+                )}
+                on:click={move |_| current_route.set(href)}
+            >
+                {label}
+            </a>
+        }
+    };
+
+    rsx! {
+        <nav class={class!(
+            "navbar",
+            is_mobile_open.get() => "navbar-expanded"
+        )}>
+            <button
+                class="navbar-toggle"
+                on:click={move |_| is_mobile_open.set(!is_mobile_open.get())}
+            >
+                Menu
+            </button>
+
+            <div class={class!(
+                "navbar-menu",
+                is_mobile_open.get() => "block",
+                !is_mobile_open.get() => "hidden"
+            )}>
+                {nav_link("/", "Home")}
+                {nav_link("/about", "About")}
+                {nav_link("/contact", "Contact")}
+            </div>
+        </nav>
+    }
+}"#}
+                />
+
+                <h2 class="font-bold uppercase">Best Practices</h2>
+                <ul>
+                    <li>Use class! for inline, component-local class logic</li>
+                    <li>Use classes() for computed or reusable class utilities</li>
+                    <li>Keep conditional logic simple and readable</li>
+                    <li>Consider extracting complex class logic into helper functions</li>
+                    <li>Combine with Tailwind CSS or other utility frameworks</li>
+                </ul>
+
+                <Note variant="tip">
+                    <p>
+                        <strong>Performance:</strong> Both class! and classes() are efficient and compile to optimized code. The class! macro evaluates at runtime but has minimal overhead.
+                    </p>
+                </Note>
+            </section>
+        </article>
+    }
+}
+
+#[component]
 fn ForPage() -> Node {
     rsx! {
         <article class="mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8">
@@ -521,7 +904,7 @@ fn FruitList() -> Node {
         "Banana".to_string(),
         "Cherry".to_string(),
     ]);
-    
+
     rsx! {
         <div>
             <h2 class="font-bold uppercase">"Fruit List"</h2>
@@ -615,9 +998,9 @@ fn TodoList() -> Node {
         Todo { id: 2, text: "Build an app".to_string(), completed: false },
         Todo { id: 3, text: "Share with friends".to_string(), completed: true },
     ]);
-    
+
     let new_todo_text = create_signal(String::new());
-    
+
     let add_todo = move |_| {
         let text = new_todo_text.get();
         if !text.is_empty() {
@@ -630,13 +1013,13 @@ fn TodoList() -> Node {
             new_todo_text.set(String::new());
         }
     };
-    
+
     let toggle_todo = move |id: usize| {
         if let Some(todo) = todos.iter_mut().find(|todo| todo.id == id) {
             todo.completed = !todo.completed;
         }
     };
-    
+
     rsx! {
         <div>
             <h2 class="font-bold uppercase">"Todo List"</h2>
@@ -644,12 +1027,12 @@ fn TodoList() -> Node {
                 {todos.map(|todo| {
                     let id = todo.id;
                     rsx! {
-                        <li class={format!("flex items-center {}", 
+                        <li class={format!("flex items-center {}",
                             if todo.completed { "line-through text-gray-400" } else { "" }
                         )}>
-                            <input 
-                                type="checkbox" 
-                                checked={todo.completed} 
+                            <input
+                                type="checkbox"
+                                checked={todo.completed}
                                 on:change={move |_| toggle_todo(id)}
                                 class="mr-2"
                             />
@@ -658,16 +1041,16 @@ fn TodoList() -> Node {
                     }
                 })}
             </ul>
-            
+
             <div class="mt-4 flex">
-                <input 
-                    type="text" 
+                <input
+                    type="text"
                     value={new_todo_text}
                     on:input={move |e| new_todo_text.set(e.value())}
                     placeholder="Add a new todo"
                     class="border p-2 rounded-l"
                 />
-                <button 
+                <button
                     on:click={add_todo}
                     class="bg-blue-500 text-white p-2 rounded-r"
                 >
@@ -694,18 +1077,18 @@ rsx! {
     <div>
         <div class="mb-4">
             <label class="mr-4">
-                <input 
-                    type="checkbox" 
+                <input
+                    type="checkbox"
                     checked={show_even_only}
                     on:change={move |_| show_even_only.set(!show_even_only.get())}
                     class="mr-2"
                 />
                 "Show even numbers only"
             </label>
-            
+
             <label>
-                <input 
-                    type="checkbox" 
+                <input
+                    type="checkbox"
                     checked={sort_ascending}
                     on:change={move |_| sort_ascending.set(!sort_ascending.get())}
                     class="mr-2"
@@ -713,23 +1096,23 @@ rsx! {
                 "Sort ascending"
             </label>
         </div>
-        
+
         <ul class="grid grid-cols-3 gap-2">
             {{
                 let mut filtered = numbers.get();
-                
+
                 // Apply filtering if needed
                 if show_even_only.get() {
                     filtered.retain(|n| n % 2 == 0);
                 }
-                
+
                 // Apply sorting
                 if sort_ascending.get() {
                     filtered.sort();
                 } else {
                     filtered.sort_by(|a, b| b.cmp(a));
                 }
-                
+
                 // Map to nodes
                 filtered.iter().map(|n| rsx! {
                     <li class="bg-gray-100 dark:bg-gray-800 p-2 rounded text-center">
@@ -788,7 +1171,7 @@ fn ResourcesPage() -> Node {
             <section class="prose prose-gray dark:prose-invert max-w-none">
                 <h2 class="font-bold uppercase">Introduction</h2>
                 <p>
-                    "Resources in Momenta are reactive primitives designed for handling asynchronous operations like API calls, 
+                    "Resources in Momenta are reactive primitives designed for handling asynchronous operations like API calls,
                     file loading, or any other async task. They automatically manage loading states, errors, and data updates."
                 </p>
 
@@ -805,14 +1188,14 @@ fn UserProfile() -> Node {
         // Simulate API call
         fetch_user_data().await
     });
-    
+
     rsx! {
         <div>
-            {when!(user_resource.loading() => 
+            {when!(user_resource.loading() =>
                 <div class="loading">"Loading user data..."</div>
-            else when!(user_resource.error().is_some() => 
+            else when!(user_resource.error().is_some() =>
                 <div class="error">"Error loading user"</div>
-            ) else 
+            ) else
                 <div>
                     <h1>"User: " {user_resource.get().unwrap_or_default()}</h1>
                 </div>
@@ -877,17 +1260,17 @@ fn ResourceStates() -> Node {
         // Simulate API call that might fail
         fetch_data_with_potential_error().await
     });
-    
+
     rsx! {
         <div>
-            {when!(data_resource.loading() => 
+            {when!(data_resource.loading() =>
                 <div class="loading">"Loading data..."</div>
-            else when!(data_resource.error().is_some() => 
+            else when!(data_resource.error().is_some() =>
                 <div class="error">
                     "Error: " {data_resource.error().unwrap_or_default()}
                     <button on:click={move |_| data_resource.refetch()}>"Retry"</button>
                 </div>
-            ) else 
+            ) else
                 <div class="success">
                     "Data: " {data_resource.get().unwrap_or_default()}
                 </div>
@@ -912,17 +1295,17 @@ fn RetryableResource() -> Node {
     let api_resource = create_resource(|| async {
         fetch_api_data().await
     });
-    
+
     rsx! {
         <div>
-            {when!(api_resource.loading() => 
+            {when!(api_resource.loading() =>
                 <div>"Fetching data..."</div>
-            else when!(api_resource.error().is_some() => 
+            else when!(api_resource.error().is_some() =>
                 <div>
                     <p>"Failed to load data"</p>
                     <button on:click={move |_| api_resource.refetch()}>"Try Again"</button>
                 </div>
-            ) else 
+            ) else
                 <div>{api_resource.get().unwrap_or_default()}</div>
             )}
         </div>
@@ -938,7 +1321,7 @@ fn RetryableResource() -> Node {
                     code={r#"#[component]
 fn ReactiveResource() -> Node {
     let user_id = create_signal(1);
-    
+
     // Resource automatically refetches when user_id changes
     let user_profile = create_resource(move || {
         let id = user_id.get();
@@ -946,7 +1329,7 @@ fn ReactiveResource() -> Node {
             fetch_user_profile(id).await
         }
     });
-    
+
     rsx! {
         <div>
             <select on:change={move |e| user_id.set(e.target.value.parse().unwrap_or(1))}>
@@ -954,10 +1337,10 @@ fn ReactiveResource() -> Node {
                 <option value="2">"User 2"</option>
                 <option value="3">"User 3"</option>
             </select>
-            
-            {when!(user_profile.loading() => 
+
+            {when!(user_profile.loading() =>
                 <div>"Loading profile..."</div>
-            else 
+            else
                 <div>{user_profile.get().unwrap_or_default()}</div>
             )}
         </div>
@@ -975,25 +1358,25 @@ fn ResourceWithEffects() -> Node {
     let data_resource = create_resource(|| async {
         fetch_important_data().await
     });
-    
+
     // React to resource state changes
     create_effect(move || {
         if let Some(data) = data_resource.get() {
             // Process successful data
             log!("Data loaded successfully: {}", data);
         }
-        
+
         if let Some(error) = data_resource.error() {
             // Handle errors
             log!("Error occurred: {}", error);
         }
     });
-    
+
     rsx! {
         <div>
-            {when!(data_resource.loading() => 
+            {when!(data_resource.loading() =>
                 <div>"Processing..."</div>
-            else 
+            else
                 <div>{data_resource.get().unwrap_or_default()}</div>
             )}
         </div>
@@ -1013,7 +1396,7 @@ fn ResourceWithEffects() -> Node {
 
                 <Note variant="tip">
                     <p>
-                        <strong>"Performance:"</strong> " Resources are optimized for client-side rendering and 
+                        <strong>"Performance:"</strong> " Resources are optimized for client-side rendering and
                         integrate seamlessly with Momenta's reactive system for efficient updates."
                     </p>
                 </Note>
@@ -1109,7 +1492,7 @@ fn RsxPage() -> Node {
 #[component]
 fn HelloWorld() -> Node {
     let name = create_signal("World");
-    
+
     rsx! {
         <div>
             <h1>"Hello, " {name} "!"</h1>
@@ -1163,7 +1546,7 @@ let element = rsx! {
 // Conditional attributes
 let disabled = create_signal(false);
 let button = rsx! {
-    <button 
+    <button
         class="btn"
         disabled={disabled.get()}
     >
@@ -1286,12 +1669,12 @@ pub fn EffectsPage() -> Node {
 #[component]
 fn Counter() -> Node {
     let count = create_signal(0);
-    
+
     // This effect will run whenever count changes
     create_effect(move || {
         log!("Count changed to: {}", count.get());
     });
-    
+
     rsx! {
         <div>
             <p>"Current count: " {count}</p>
@@ -1416,7 +1799,7 @@ fn SignalsPage() -> Node {
 fn App() -> Node {
     // Create a signal with initial value 0
     let count = create_signal(0);
-    
+
     rsx! {
         <div>
             <p>Count: {count}</p>
@@ -1563,11 +1946,11 @@ features = ["Document", "Element", "HtmlElement"]"#}
 #[component]
 fn App() -> Node {
     let name = create_signal("World");
-    
+
     rsx! {
         <div class="container">
             <h1>Hello, {name}!</h1>
-            <input 
+            <input
                 type="text"
                 value={name}
                 on:input={move |e| name.set(e.value())}
@@ -1674,7 +2057,7 @@ fn App() -> Node {
 #[component]
 fn Button(props: &ButtonProps) -> Node {
     let class = format!("btn btn-{}", props.variant);
-    
+
     rsx! {
         <button class={class} on:click={props.on:click}>
             {props.text}
@@ -1686,11 +2069,11 @@ fn Button(props: &ButtonProps) -> Node {
 #[component]
 fn App() -> Node {
     let count = create_signal(0);
-    
+
     rsx! {
         <div>
             <p>Count: {count}</p>
-            <Button 
+            <Button
                 text="Increment"
                 variant="primary"
                 on:click={move || count += 1}
@@ -1713,14 +2096,14 @@ fn App() -> Node {
                     code={r#"#[component]
 fn Toggle() -> Node {
     let is_on = create_signal(false);
-    
+
     let toggle = move |_| {
         is_on.set(!is_on);
     };
-    
+
     rsx! {
         <div class="toggle">
-            <button 
+            <button
                 class={when!(is_on => "toggle-on" else "toggle-off")}
                 on:click={toggle}
             >
@@ -1916,7 +2299,7 @@ fn VirtualizedList() -> Node {
     let items = create_signal((0..10000).map(|i| format!("Item {}", i)).collect::<Vec<_>>());
     let visible_start = create_signal(0);
     let visible_count = 20;
-    
+
     rsx! {
         <div class="h-96 overflow-y-auto" on:scroll={move |e| {
             let scroll_top = e.scroll_top();
@@ -1970,13 +2353,13 @@ create_effect(move || {
                     code={r#"#[component]
 fn CounterComponent() -> Node {
     let count = create_signal(0);
-    
+
     // ✅ Effects automatically clean up when signals change
     create_effect(move || {
         // This effect will re-run when count changes
         log!("Count updated: {}", count.get());
     });
-    
+
     rsx! {
         <div>
             <p>"Count: " {count}</p>
@@ -2032,10 +2415,10 @@ features = [\"web\", \"signals\"]  # Only include what you need"#}
 #[cfg(debug_assertions)]
 create_effect(move || {
     let start = performance.now();
-    
+
     // Your reactive code here
     expensive_computation();
-    
+
     let end = performance.now();
     if end - start > 16.0 { // More than one frame (60fps)
         log!("Slow update detected: {}ms", end - start);
@@ -2156,9 +2539,9 @@ let filter = create_signal(Filter::All);"#}
                     code={r#"#[component]
 fn AddTodo(todos: Signal<Vec<Todo>>) -> Node {
     let input_text = create_signal(String::new());
-    
+
     rsx! {
-        <input 
+        <input
             type="text"
             placeholder="What needs to be done?"
             value={input_text.get()}
@@ -2254,21 +2637,21 @@ fn StoryList() -> Node {
     let stories_resource = create_resource(|| async {
         fetch_stories().await
     });
-    
+
     rsx! {
         <div class="story-list">
-            {when!(stories_resource.loading() => 
+            {when!(stories_resource.loading() =>
                 <div>"Loading stories..."</div>
-            else when!(stories_resource.error().is_some() => 
+            else when!(stories_resource.error().is_some() =>
                 <div class="error">"Failed to load stories"</div>
-            ) else 
+            ) else
                 <div>
                     {stories_resource.get().unwrap_or_default().iter().map(|story| {
                         rsx! {
                             <div key={story.id} class="story-item">
                                 <h3>{story.title.clone()}</h3>
                                 <p>"Score: " {story.score} " by " {story.by.clone()}</p>
-                                {when!(story.url.is_some() => 
+                                {when!(story.url.is_some() =>
                                     <a href={story.url.clone().unwrap()} target="_blank">"Read more"</a>
                                 )}
                             </div>
@@ -2361,7 +2744,7 @@ fn ArticleEditor() -> Node {
     let title = create_signal(String::new());
     let body = create_signal(String::new());
     let tags = create_signal(Vec::<String>::new());
-    
+
     let submit_article = move || {
         let article = Article {
             title: title.get(),
@@ -2370,7 +2753,7 @@ fn ArticleEditor() -> Node {
         };
         // Submit to API
     };
-    
+
     rsx! {
         <form onsubmit={move |_| submit_article()}>
             // Form fields
@@ -2423,7 +2806,7 @@ fn ShowPage() -> Node {
 #[component]
 fn App() -> Node {
     let is_logged_in = create_signal(false);
-    
+
     rsx! {
         <div>
             {when!(is_logged_in =>
@@ -2560,7 +2943,7 @@ fn RequirePermission(props: &PermissionProps) -> Node {
     let has_permission = props.user_permissions
         .iter()
         .any(|p| p == props.required_permission);
-    
+
     rsx! {
         {when!(has_permission =>
             <div>{&props.children}</div>
@@ -2575,8 +2958,8 @@ fn RequirePermission(props: &PermissionProps) -> Node {
 // Usage
 let user_permissions = vec!["admin".to_string(), "user".to_string()];
 rsx! {
-    <RequirePermission 
-        required_permission="admin" 
+    <RequirePermission
+        required_permission="admin"
         user_permissions={user_permissions}
     >
         <AdminSettings />
