@@ -380,10 +380,6 @@ macro_rules! derive_elements {
 
             $crate::paste! {
                 #[derive(Default)]
-                /// HTML Element Properties with comprehensive attributes and event handlers.
-                ///
-                /// This struct provides a type-safe way to define HTML element properties,
-                /// including global attributes, ARIA accessibility features, and event handlers.
                 #[allow(non_snake_case)]
                 pub struct [<HTML $tag:camel Element Props>] {
                     // ============================================================================
@@ -1092,6 +1088,7 @@ macro_rules! derive_elements {
                     )*
                 }
 
+                #[allow(deprecated)]
                 impl [<HTML $tag:camel Element Props>] {
                     fn to_attributes(&self) -> alloc::collections::BTreeMap<String, String> {
                         #[allow(unused_imports)]
@@ -1239,6 +1236,7 @@ macro_rules! derive_elements {
                     }
                 }
 
+                #[allow(deprecated)]
                 impl $crate::nodes::Component for $tag {
                     type Props = [<HTML $tag:camel Element Props>];
 
