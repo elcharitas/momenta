@@ -5,13 +5,12 @@ use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::token::Colon;
 use syn::{
-    Block, Expr, ExprLit, Ident, ItemFn, Lit, LitStr, Result, Token,
-    parse::{Parse, ParseStream},
+    Block, Expr, ExprLit, Ident, ItemFn, Lit, LitStr, Result, Token, braced,
+    parse::{Parse, ParseStream, Parser, discouraged::Speculative},
     parse_macro_input, parse_quote,
     token::Brace,
 };
-use syn::{ExprLet, FnArg, PatType, Signature, Type, TypeReference};
-use syn::{Stmt, braced};
+use syn::{ExprLet, FnArg, PatType, Signature, Stmt, Type, TypeReference};
 
 /// Parse either an identifier or a keyword token as an identifier
 /// Keywords get converted to identifiers with _ suffix
@@ -828,7 +827,17 @@ impl Parse for RsxNode {
         if input.peek(Brace) {
             let content;
             braced!(content in input);
-            let expr: Expr = content.parse()?;
+
+            // Try to parse as JSX first
+            if content.peek(Token![<]) {
+                if let Ok(rsx_node) = content.parse::<RsxNode>() {
+                    return Ok(rsx_node);
+                }
+            }
+
+            // Parse as expression, which may contain RSX nodes in closures
+            let expr = parse_expr_with_closures(&content)?;
+
             return Ok(RsxNode::Text(expr));
         }
 
@@ -1017,6 +1026,162 @@ impl RsxNode {
             }
         }
     }
+}
+
+fn process_group(delimiter: proc_macro2::Delimiter, stream: TokenStream2) -> TokenStream2 {
+    use proc_macro2::{Delimiter, Group, TokenTree};
+    if delimiter == Delimiter::None {
+        return stream;
+    }
+
+    let mut tokens = TokenStream2::new();
+    let result = syn::parse::Parser::parse2(
+        |input: ParseStream| -> Result<()> {
+            while !input.is_empty() {
+                // Check for macro invocations (rsx!, when!, etc.) and preserve them
+                if input.peek(Ident) {
+                    let fork = input.fork();
+                    if let Ok(ident) = fork.parse::<Ident>() {
+                        if fork.peek(Token![!]) {
+                            // This is a macro invocation, preserve it as-is
+                            tokens.extend(std::iter::once(TokenTree::Ident(ident)));
+                            input.advance_to(&fork);
+                            continue;
+                        }
+                    }
+                }
+
+                if input.peek(Token![<]) && !input.peek2(Token![=]) && !input.peek2(Token![-]) {
+                    let fork = input.fork();
+                    if let Ok(node) = fork.parse::<RsxNode>() {
+                        tokens.extend(node.to_tokens());
+                        input.advance_to(&fork);
+                        continue;
+                    }
+                }
+                let token: TokenTree = input.parse()?;
+                if let TokenTree::Group(g) = &token {
+                    tokens.extend(std::iter::once(TokenTree::Group(Group::new(
+                        g.delimiter(),
+                        process_group(g.delimiter(), g.stream()),
+                    ))));
+                } else {
+                    tokens.extend(std::iter::once(token));
+                }
+            }
+            Ok(())
+        },
+        stream.clone(),
+    );
+    if result.is_ok() { tokens } else { stream }
+}
+
+fn parse_expr_with_closures(input: ParseStream) -> Result<Expr> {
+    use proc_macro2::{Delimiter, Group, TokenTree};
+    let mut tokens = TokenStream2::new();
+
+    while !input.is_empty() {
+        // Check for macro invocations and preserve them as-is
+        if input.peek(Ident) {
+            let fork = input.fork();
+            if let Ok(ident) = fork.parse::<Ident>() {
+                if fork.peek(Token![!]) {
+                    // Preserve the macro invocation completely
+                    tokens.extend(std::iter::once(TokenTree::Ident(ident)));
+                    input.advance_to(&fork);
+                    continue;
+                }
+            }
+        }
+
+        let fork = input.fork();
+        let mut closure_tokens = TokenStream2::new();
+
+        // Check for async/move modifiers
+        if fork.peek(Token![async]) {
+            closure_tokens.extend(std::iter::once(fork.parse::<TokenTree>()?));
+        }
+        if fork.peek(Token![move]) {
+            closure_tokens.extend(std::iter::once(fork.parse::<TokenTree>()?));
+        }
+
+        // Look for closure pattern: |...| <element> or {RSX}
+        if fork.peek(Token![|]) {
+            closure_tokens.extend(std::iter::once(fork.parse::<TokenTree>()?));
+            while !fork.is_empty() && !fork.peek(Token![|]) {
+                closure_tokens.extend(std::iter::once(fork.parse::<TokenTree>()?));
+            }
+
+            if fork.peek(Token![|]) {
+                closure_tokens.extend(std::iter::once(fork.parse::<TokenTree>()?));
+
+                // Direct RSX: |x| <div>{x}</div>
+                if fork.peek(Token![<]) && !fork.peek2(Token![=]) && !fork.peek2(Token![-]) {
+                    if let Ok(node) = fork.parse::<RsxNode>() {
+                        closure_tokens.extend(node.to_tokens());
+                        tokens.extend(closure_tokens);
+                        input.advance_to(&fork);
+                        continue;
+                    }
+                }
+
+                // Braced body: |x| { ... }
+                // Don't process the body if it contains macro invocations
+                if fork.peek(Brace) {
+                    let content;
+                    braced!(content in fork);
+
+                    // Check if the body contains macro invocations
+                    let body_str = content.to_string();
+                    let has_macros = body_str.contains("rsx!") || body_str.contains("when!");
+
+                    if has_macros {
+                        // Preserve the braced body as-is for macro expansion
+                        closure_tokens.extend(std::iter::once(TokenTree::Group(Group::new(
+                            Delimiter::Brace,
+                            content.parse()?,
+                        ))));
+                    } else {
+                        // Process the body for direct RSX nodes
+                        let processed = process_group(Delimiter::Brace, content.parse()?);
+                        closure_tokens.extend(std::iter::once(TokenTree::Group(Group::new(
+                            Delimiter::Brace,
+                            processed,
+                        ))));
+                    }
+                    tokens.extend(closure_tokens);
+                    input.advance_to(&fork);
+                    continue;
+                }
+            }
+        }
+
+        let token: TokenTree = input.parse()?;
+        if let TokenTree::Group(g) = &token {
+            if g.delimiter() == Delimiter::Brace || g.delimiter() == Delimiter::Parenthesis {
+                // Check if the group contains macro invocations
+                let group_str = g.stream().to_string();
+                let has_macros = group_str.contains("rsx!") || group_str.contains("when!");
+
+                if has_macros {
+                    // Preserve the group as-is for macro expansion
+                    tokens.extend(std::iter::once(token));
+                } else if let Ok(expr) = parse_expr_with_closures.parse2(g.stream()) {
+                    tokens.extend(std::iter::once(TokenTree::Group(Group::new(
+                        g.delimiter(),
+                        quote! { #expr },
+                    ))));
+                    continue;
+                } else {
+                    tokens.extend(std::iter::once(token));
+                }
+                continue;
+            }
+        }
+        tokens.extend(std::iter::once(token));
+    }
+
+    syn::parse2(tokens)
 }
 
 fn parse_range(input: &str) -> Option<(usize, usize)> {
