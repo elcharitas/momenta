@@ -1131,24 +1131,12 @@ fn parse_expr_with_closures(input: ParseStream) -> Result<Expr> {
                     let content;
                     braced!(content in fork);
 
-                    // Check if the body contains macro invocations
-                    let body_str = content.to_string();
-                    let has_macros = body_str.contains("rsx!") || body_str.contains("when!");
-
-                    if has_macros {
-                        // Preserve the braced body as-is for macro expansion
-                        closure_tokens.extend(std::iter::once(TokenTree::Group(Group::new(
-                            Delimiter::Brace,
-                            content.parse()?,
-                        ))));
-                    } else {
-                        // Process the body for direct RSX nodes
-                        let processed = process_group(Delimiter::Brace, content.parse()?);
-                        closure_tokens.extend(std::iter::once(TokenTree::Group(Group::new(
-                            Delimiter::Brace,
-                            processed,
-                        ))));
-                    }
+                    // Process the body for direct RSX nodes
+                    let processed = process_group(Delimiter::Brace, content.parse()?);
+                    closure_tokens.extend(std::iter::once(TokenTree::Group(Group::new(
+                        Delimiter::Brace,
+                        processed,
+                    ))));
                     tokens.extend(closure_tokens);
                     input.advance_to(&fork);
                     continue;
@@ -1159,14 +1147,7 @@ fn parse_expr_with_closures(input: ParseStream) -> Result<Expr> {
         let token: TokenTree = input.parse()?;
         if let TokenTree::Group(g) = &token {
             if g.delimiter() == Delimiter::Brace || g.delimiter() == Delimiter::Parenthesis {
-                // Check if the group contains macro invocations
-                let group_str = g.stream().to_string();
-                let has_macros = group_str.contains("rsx!") || group_str.contains("when!");
-
-                if has_macros {
-                    // Preserve the group as-is for macro expansion
-                    tokens.extend(std::iter::once(token));
-                } else if let Ok(expr) = parse_expr_with_closures.parse2(g.stream()) {
+                if let Ok(expr) = parse_expr_with_closures.parse2(g.stream()) {
                     tokens.extend(std::iter::once(TokenTree::Group(Group::new(
                         g.delimiter(),
                         quote! { #expr },

@@ -171,7 +171,7 @@ mod tests {
         let list = rsx!(
             <ul>
                 {items.iter().enumerate().map(|(index, item)| {
-                    rsx!(<li key={index.to_string()}>{item}</li>)
+                    <li key={index.to_string()}>{item}</li>
                 })}
             </ul>
         );
