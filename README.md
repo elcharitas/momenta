@@ -166,20 +166,6 @@ rsx! {
 }
 ```
 
-<!-- ## Examples
-
-Check out these example applications:
-
-- **[Counter](examples/counter)** - Simple counter demonstrating signals
-- **[TodoMVC](examples/todomvc)** - Classic TodoMVC implementation
-- **[Hacker News](examples/hackernews)** - Hacker News clone with async data loading
-- **[RealWorld](examples/realworld)** - Full-stack RealWorld example -->
-
-## Documentation
-
-- **[Getting Started Guide](https://elcharitas.github.io/momenta)** - Learn the basics
-- **[API Documentation](https://docs.rs/momenta)** - Complete API reference
-
 ## Feature Flags
 
 Enable optional features in your `Cargo.toml`:
@@ -202,11 +188,32 @@ For server-side rendering without DOM, use only `momenta-core`:
 momenta-core = "0.2"
 ```
 
-## Community & Support
+## Comparison with Other Frameworks
 
-- **[GitHub Discussions](https://github.com/elcharitas/momenta/discussions)** - Ask questions, share ideas
-- **[Issues](https://github.com/elcharitas/momenta/issues)** - Report bugs, request features
-- **[Contributing Guide](CONTRIBUTING.md)** - Learn how to contribute
+| Feature | Momenta | Yew | Dioxus | Leptos |
+|---------|---------|-----|--------|--------|
+| **Reactivity Model** | Compile-time/Fine grained | Component-scoped | Component-scoped (VDOM) | Fine-grained (Signals) |
+| **Runtime Overhead** | None | Medium | Medium | Low |
+| **Bundle Size** | Smallest | Large | Medium | Small |
+| **Memory Usage** | Minimal | High | Medium | Low |
+| **Rendering Strategy** | Direct DOM | Virtual DOM | Virtual DOM | Direct DOM |
+| **Developer Experience** |  |  |  |  |
+| **Syntax** | RSX (React-like) | html! macro | RSX | view! macro |
+| **Type Safety** | ✅ Excellent | ✅ Excellent | ✅ Excellent | ✅ Excellent |
+| **Hot Reload** | ❌ | ⚠️ Limited | ✅ Yes | ✅ Yes |
+| **Learning Curve** | Easy (if you know React) | Medium | Easy | Medium |
+| **Documentation** | Growing | Mature | Good | Good |
+| **Platform** |  |  |  |  |
+| **Web (WASM)** | ✅ | ✅ | ✅ | ✅ |
+| **Desktop** | ❌ | ❌ | ✅ | ❌ |
+| **Mobile** | ❌ | ❌ | ✅ | ❌ |
+| **SSR** | ✅ | ✅ | ✅ | ✅ |
+| **no_std** | ✅ | ❌ | ❌ | ❌ |
+| **Ecosystem & Community** |  |  |  |  |
+| **Maturity** | New | Mature | Growing | Growing |
+| **GitHub Stars** | <1k | 30.5k+ | 20k+ | 18.5k+ |
+| **Component Libraries** | Limited | Good | Growing | Growing |
+| **Community Size** | Small | Large | Medium | Medium |
 
 ## Contributing
 
@@ -216,18 +223,9 @@ We welcome contributions! Here's how you can help:
 2. **Suggest features** - Start a discussion about your idea
 3. **Improve docs** - Help us make the docs better
 4. **Submit PRs** - Fix bugs or implement features
+5. **Star the repo** - Show your support!
 
 Please read our [Contributing Guide](CONTRIBUTING.md) before submitting PRs.
-
-## Comparison with Other Frameworks
-
-| Feature | Momenta | Yew | Dioxus |
-|---------|---------|-----|--------|
-| Fine-grained reactivity | Yes | No | Yes |
-| JSX-like syntax | Yes | Yes | Yes |
-| SSR Support | Yes | Yes | Yes |
-| Learning curve | Low | Medium | Medium |
-| Bundle size | Small | Large | Medium |
 
 ## License
 

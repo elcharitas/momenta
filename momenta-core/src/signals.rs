@@ -431,9 +431,10 @@ impl<T: SignalValue + 'static> Signal<T> {
                 changes.insert(self.id);
             }
 
-            // Only render immediately if we're not batching and not inside a scope
+            // Only render immediately if we're not batching and not inside a scope or effect
             let should_batch = *BATCH_UPDATES.lock();
-            if !should_batch && get_current_scope().is_none() {
+            let is_in_effect = !EXECUTING_EFFECTS.lock().is_empty();
+            if !should_batch && get_current_scope().is_none() && !is_in_effect {
                 render_scope(self.id.0);
             }
         }
@@ -1021,12 +1022,21 @@ fn run_scope_effects(scope_id: usize) {
 }
 
 fn process_pending_renders() {
+    const MAX_ITERATIONS: usize = 100;
+    let mut iterations = 0;
+
     while let Some(scope_id) = {
         let mut pending = PENDING_SCOPE_RENDERS.lock();
         pending.iter().next().copied().inspect(|id| {
             pending.remove(id);
         })
     } {
+        iterations += 1;
+        if iterations >= MAX_ITERATIONS {
+            // Break to prevent infinite loops
+            // In debug builds, this indicates a potential reactivity cycle
+            break;
+        }
         render_scope(scope_id);
     }
 }
