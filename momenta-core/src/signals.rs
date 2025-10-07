@@ -431,11 +431,26 @@ impl<T: SignalValue + 'static> Signal<T> {
                 changes.insert(self.id);
             }
 
-            // Only render immediately if we're not batching and not inside a scope or effect
+            // Only render immediately if we're not batching, not inside a scope/effect, and not currently rendering
             let should_batch = *BATCH_UPDATES.lock();
             let is_in_effect = !EXECUTING_EFFECTS.lock().is_empty();
-            if !should_batch && get_current_scope().is_none() && !is_in_effect {
-                render_scope(self.id.0);
+            let is_rendering = *RENDERING_SCOPE.lock() != 0;
+
+            if !should_batch && get_current_scope().is_none() && !is_in_effect && !is_rendering {
+                // Queue for rendering instead of immediate render
+                let mut pending = PENDING_SCOPE_RENDERS.lock();
+
+                // Find all scopes that depend on this signal
+                let signal_deps = SIGNAL_DEPENDENCIES.lock();
+                if let Some(dependent_scopes) = signal_deps.get(&self.id) {
+                    for &scope_id in dependent_scopes {
+                        pending.insert(scope_id);
+                    }
+                }
+                drop(signal_deps);
+                drop(pending);
+
+                process_pending_renders();
             }
         }
     }
@@ -880,10 +895,13 @@ fn render_scope(scope_id: usize) -> Node {
         previous_scope: get_current_scope(),
     };
 
-    // Check if this scope is already being rendered to prevent infinite loops
+    // Check if this SAME scope is already being rendered to prevent infinite loops
     {
         let rendering_flag = RENDERING_SCOPE.lock();
         if *rendering_flag == scope_id {
+            // This exact scope is already rendering, queue it for later
+            let mut pending = PENDING_SCOPE_RENDERS.lock();
+            pending.insert(scope_id);
             return Node::Empty;
         }
     }
@@ -894,14 +912,13 @@ fn render_scope(scope_id: usize) -> Node {
         return Node::Empty;
     }
 
-    let (should_clear_deps, was_rendering) = {
+    let should_clear_deps = {
         let mut rendering_flag = RENDERING_SCOPE.lock();
         let mut changes = SCOPE_SIGNAL_CHANGES.lock();
-        let was_rendering = *rendering_flag;
         *rendering_flag = scope_id;
         // clear scope signals
         changes.retain(|&(scope, _)| scope != scope_id);
-        (was_rendering == 0, was_rendering)
+        true
     };
 
     if should_clear_deps {
@@ -948,35 +965,27 @@ fn render_scope(scope_id: usize) -> Node {
     run_scope_effects(scope_id);
     reset_effect_counters(scope_id);
 
-    let signal_changes = {
-        let mut changes = SCOPE_SIGNAL_CHANGES.lock();
+    // Clear rendering flag and process any pending changes
+    {
         let mut rendering_flag = RENDERING_SCOPE.lock();
-        let result = if !changes.is_empty() {
-            Some(core::mem::take(&mut *changes))
-        } else {
-            None
-        };
-        *rendering_flag = was_rendering;
-        result
-    };
+        *rendering_flag = 0;
+    }
 
-    if let Some(changes) = signal_changes {
-        let mut pending = PENDING_SCOPE_RENDERS.lock();
-        let signal_deps = SIGNAL_DEPENDENCIES.lock();
-        for signal_id in changes {
-            if let Some(dependent_scopes) = signal_deps.get(&signal_id) {
-                for &dependent_scope in dependent_scopes {
-                    if dependent_scope != scope_id {
-                        pending.insert(dependent_scope);
+    // Queue dependent scopes for any signal changes that occurred during rendering
+    {
+        let changes = SCOPE_SIGNAL_CHANGES.lock();
+        if !changes.is_empty() {
+            let mut pending = PENDING_SCOPE_RENDERS.lock();
+            let signal_deps = SIGNAL_DEPENDENCIES.lock();
+            for signal_id in changes.iter() {
+                if let Some(dependent_scopes) = signal_deps.get(signal_id) {
+                    for &dependent_scope in dependent_scopes {
+                        if dependent_scope != scope_id {
+                            pending.insert(dependent_scope);
+                        }
                     }
                 }
             }
-        }
-
-        if was_rendering == 0 {
-            drop(pending);
-            drop(signal_deps);
-            process_pending_renders();
         }
     }
 
