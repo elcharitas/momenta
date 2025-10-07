@@ -10,6 +10,148 @@ use core::{fmt::Display, iter::FromIterator};
 
 pub use momenta_macros::{component, rsx, when};
 
+/// Optimized HTML writer that minimizes allocations
+///
+/// This struct provides efficient HTML generation by:
+/// - Using a pre-allocated buffer with estimated capacity
+/// - Writing directly to the buffer without intermediate string creation
+/// - Leveraging fmt::Write for zero-allocation formatting
+pub struct HtmlWriter {
+    buffer: String,
+}
+
+impl HtmlWriter {
+    /// Creates a new HtmlWriter with the specified capacity
+    #[inline]
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            buffer: String::with_capacity(capacity),
+        }
+    }
+
+    /// Creates a new HtmlWriter with default capacity
+    #[inline]
+    pub fn new() -> Self {
+        Self::with_capacity(512)
+    }
+
+    /// Writes an opening tag with attributes
+    #[inline]
+    fn write_open_tag(&mut self, tag: &str, attributes: &BTreeMap<String, String>) {
+        self.buffer.push('<');
+        self.buffer.push_str(tag);
+
+        if !attributes.is_empty() {
+            for (key, value) in attributes {
+                self.buffer.push(' ');
+                self.buffer.push_str(key);
+                self.buffer.push_str("=\"");
+                self.buffer.push_str(value);
+                self.buffer.push('"');
+            }
+        }
+
+        self.buffer.push('>');
+    }
+
+    /// Fast path for tags without attributes
+    #[inline]
+    fn write_open_tag_no_attrs(&mut self, tag: &str) {
+        self.buffer.push('<');
+        self.buffer.push_str(tag);
+        self.buffer.push('>');
+    }
+
+    /// Writes a closing tag
+    #[inline]
+    fn write_close_tag(&mut self, tag: &str) {
+        self.buffer.push_str("</");
+        self.buffer.push_str(tag);
+        self.buffer.push('>');
+    }
+
+    /// Writes sanitized text content
+    #[inline]
+    fn write_text(&mut self, text: &str) {
+        // Fast path: check if text needs escaping at all
+        let needs_escape = text
+            .bytes()
+            .any(|b| matches!(b, b'<' | b'>' | b'&' | b'"' | b'/'));
+
+        if !needs_escape {
+            // Zero-cost: no escaping needed
+            self.buffer.push_str(text);
+            return;
+        }
+
+        // Slow path: escape as needed
+        for c in text.chars() {
+            match c {
+                '<' => self.buffer.push_str("&lt;"),
+                '>' => self.buffer.push_str("&gt;"),
+                '&' => self.buffer.push_str("&amp;"),
+                '"' => self.buffer.push_str("&quot;"),
+                '/' => self.buffer.push_str("&#x2F;"),
+                _ => self.buffer.push(c),
+            }
+        }
+    }
+
+    /// Writes a node to the buffer
+    #[inline]
+    fn write_node(&mut self, node: &Node) {
+        match node {
+            Node::Element(el) => {
+                // Fast path for elements without attributes
+                if el.attributes.is_empty() {
+                    self.write_open_tag_no_attrs(&el.tag);
+                } else {
+                    self.write_open_tag(&el.tag, &el.attributes);
+                }
+
+                if el.children.is_empty() && !el.inner_html.is_empty() {
+                    self.buffer.push_str(&el.inner_html);
+                } else {
+                    for child in &el.children {
+                        self.write_node(child);
+                    }
+                }
+                self.write_close_tag(&el.tag);
+            }
+            Node::Text(text) => {
+                self.write_text(text);
+            }
+            Node::Fragment(nodes) => {
+                for node in nodes {
+                    self.write_node(node);
+                }
+            }
+            Node::Comment(comment) => {
+                self.buffer.push_str("<!--");
+                self.buffer.push_str(comment);
+                self.buffer.push_str("-->");
+            }
+            Node::Static(html) => {
+                // Zero-cost: pre-rendered HTML, no escaping needed
+                self.buffer.push_str(html);
+            }
+            Node::Empty => {}
+        }
+    }
+
+    /// Consumes the writer and returns the generated HTML
+    #[inline]
+    pub fn finish(self) -> String {
+        self.buffer
+    }
+}
+
+impl Default for HtmlWriter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Helper function to conditionally join CSS classes
 ///
 /// # Example
@@ -263,6 +405,7 @@ pub struct DefaultProps;
 /// - Text content
 /// - Fragments (groups of nodes)
 /// - Comments
+/// - Static pre-rendered HTML
 ///
 /// # Example
 ///
@@ -281,6 +424,8 @@ pub enum Node {
     Fragment(Vec<Node>),
     /// An HTML comment
     Comment(String),
+    /// Pre-rendered static HTML (zero-cost, no escaping needed)
+    Static(&'static str),
     Empty,
 }
 
@@ -302,6 +447,76 @@ impl Node {
         match self {
             Node::Element(el) => Some(el),
             _ => None,
+        }
+    }
+
+    /// Efficiently converts the node to HTML using optimized string building.
+    ///
+    /// This method provides lazy HTML generation with minimal allocations:
+    /// - Uses a pre-allocated buffer to minimize reallocations
+    /// - Writes directly to the buffer without intermediate string creation
+    /// - Estimates capacity based on node structure
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use momenta_core::prelude::*;
+    ///
+    /// let node = rsx!(<div class="container">Hello</div>);
+    /// let html = node.to_html();
+    /// ```
+    pub fn to_html(&self) -> String {
+        let capacity = self.estimate_html_size();
+        let mut writer = HtmlWriter::with_capacity(capacity);
+        writer.write_node(self);
+        writer.finish()
+    }
+
+    /// Writes this node's HTML to an existing HtmlWriter.
+    ///
+    /// This is useful for composing multiple nodes efficiently.
+    pub fn write_to(&self, writer: &mut HtmlWriter) {
+        writer.write_node(self);
+    }
+
+    /// Estimates the HTML size for capacity pre-allocation.
+    ///
+    /// This provides a rough estimate to minimize reallocations during rendering.
+    #[inline]
+    fn estimate_html_size(&self) -> usize {
+        match self {
+            Node::Element(el) => {
+                // Tag overhead: <tag> + </tag> = 5 + 2*tag_len
+                let mut size = 5 + (el.tag.len() * 2);
+
+                // Attributes: key="value"
+                for (key, value) in &el.attributes {
+                    size += key.len() + value.len() + 4; // key="value" + space
+                }
+
+                // Inner HTML
+                if !el.inner_html.is_empty() {
+                    size += el.inner_html.len();
+                }
+
+                // Children
+                for child in &el.children {
+                    size += child.estimate_html_size();
+                }
+
+                size
+            }
+            Node::Text(text) => text.len() + (text.len() >> 2), // Add 25% using bitshift
+            Node::Fragment(nodes) => {
+                let mut size = 0;
+                for node in nodes {
+                    size += node.estimate_html_size();
+                }
+                size
+            }
+            Node::Comment(comment) => comment.len() + 7, // <!-- -->
+            Node::Static(html) => html.len(),            // Exact size, no escaping
+            Node::Empty => 0,
         }
     }
 }
@@ -463,70 +678,9 @@ where
 
 impl Display for Node {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Node::Element(el) => {
-                write!(f, "<{}", el.tag)?;
-                for (key, value) in &el.attributes {
-                    write!(f, " {}=\"{}\"", key, value)?;
-                }
-                write!(f, ">")?;
-                if el.children.is_empty() && !el.html().is_empty() {
-                    write!(f, "{}", el.html())?;
-                } else {
-                    for child in &el.children {
-                        write!(f, "{}", child)?;
-                    }
-                }
-                write!(f, "</{}>", el.tag)?;
-                Ok(())
-            }
-            Node::Text(text) => {
-                write!(f, "{}", sanitize_html(text))?;
-                Ok(())
-            }
-            Node::Fragment(nodes) => {
-                for node in nodes {
-                    write!(f, "{}", node)?;
-                }
-                Ok(())
-            }
-            Node::Comment(comment) => {
-                write!(f, "<!--{}-->", comment)?;
-                Ok(())
-            }
-            Node::Empty => {
-                write!(f, "")?;
-                Ok(())
-            }
-        }
+        // Use the optimized to_html() method and write the result
+        write!(f, "{}", self.to_html())
     }
-}
-
-fn sanitize_html(input: &str) -> String {
-    let mut result = String::new();
-    for c in input.chars() {
-        match c {
-            '<' => {
-                result.push_str("&lt;");
-            }
-            '>' => {
-                result.push_str("&gt;");
-            }
-            '&' => {
-                result.push_str("&amp;");
-            }
-            '"' => {
-                result.push_str("&quot;");
-            }
-            '/' => {
-                result.push_str("&#x2F;");
-            }
-            _ => {
-                result.push(c);
-            }
-        };
-    }
-    result
 }
 
 #[cfg(feature = "wasm")]

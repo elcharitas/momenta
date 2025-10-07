@@ -16,7 +16,7 @@ pub mod signals;
 pub use paste::paste;
 
 pub mod prelude {
-    pub use crate::nodes::{Component, Node, classes};
+    pub use crate::nodes::{Component, HtmlWriter, Node, classes};
     #[cfg(any(feature = "computed", feature = "full-reactivity"))]
     pub use crate::signals::create_computed;
     #[cfg(any(feature = "memoization", feature = "full-reactivity"))]
