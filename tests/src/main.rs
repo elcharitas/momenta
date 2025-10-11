@@ -152,12 +152,11 @@ mod tests {
     }
 
     #[test]
-
     fn test_rsx_looping() {
         let items = &["Item 1", "Item 2", "Item 3"];
         let list = rsx!(
             <ul>
-                {items.iter().map(|item| rsx!(<li>{item}</li>))}
+                {items.iter().map(|item| <li>{item}</li>)}
             </ul>
         );
         assert_eq!(
@@ -172,7 +171,7 @@ mod tests {
         let list = rsx!(
             <ul>
                 {items.iter().enumerate().map(|(index, item)| {
-                    rsx!(<li key={index.to_string()}>{item}</li>)
+                    <li key={index.to_string()}>{item}</li>
                 })}
             </ul>
         );
@@ -263,5 +262,51 @@ mod tests {
         let disabled = true;
         let rsx = rsx!(<button {disabled} />); // notice how we don't need to use assignment?
         assert_eq!(rsx.to_string(), "<button disabled=\"true\"></button>")
+    }
+
+    #[test]
+    fn test_closure_with_move_keyword() {
+        let items = vec!["Item 1", "Item 2", "Item 3"];
+        let list = rsx!(
+            <ul>
+                {items.iter().map(move |item| <li>{item}</li>)}
+            </ul>
+        );
+        assert_eq!(
+            list.to_string(),
+            "<ul><li>Item 1</li><li>Item 2</li><li>Item 3</li></ul>"
+        )
+    }
+
+    #[test]
+    fn test_closure_with_braced_body() {
+        let items = vec!["A", "B", "C"];
+        let list = rsx!(
+            <ul>
+                {items.iter().map(|item| {
+                    let uppercase = item.to_uppercase();
+                    <li>{uppercase}</li>
+                })}
+            </ul>
+        );
+        assert_eq!(list.to_string(), "<ul><li>A</li><li>B</li><li>C</li></ul>")
+    }
+
+    #[test]
+    fn test_closure_with_move_and_braced_body() {
+        let prefix = "Item: ";
+        let items = vec!["X", "Y", "Z"];
+        let list = rsx!(
+            <ul>
+                {items.iter().map(move |item| {
+                    let text = format!("{}{}", prefix, item);
+                    <li>{text}</li>
+                })}
+            </ul>
+        );
+        assert_eq!(
+            list.to_string(),
+            "<ul><li>Item: X</li><li>Item: Y</li><li>Item: Z</li></ul>"
+        )
     }
 }

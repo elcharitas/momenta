@@ -609,6 +609,16 @@ impl FromIterator<u32> for Node {
     }
 }
 
+impl FromIterator<String> for Node {
+    fn from_iter<T: IntoIterator<Item = String>>(iter: T) -> Self {
+        let mut result = Vec::new();
+        for item in iter {
+            result.push(Node::Text(item));
+        }
+        Node::Fragment(result)
+    }
+}
+
 impl FromIterator<u64> for Node {
     fn from_iter<T: IntoIterator<Item = u64>>(iter: T) -> Self {
         let mut result = Vec::new();

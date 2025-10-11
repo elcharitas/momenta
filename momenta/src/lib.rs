@@ -107,7 +107,7 @@
 //!     <ul>
 //!         {items.iter().map(|item| {
 //!             let item = item.to_string();
-//!             rsx!(<li>{item}</li>)
+//!             <li>{item}</li>
 //!         })}
 //!     </ul>
 //! );
