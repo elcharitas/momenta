@@ -1,0 +1,21 @@
+[package]
+name = "momenta-benchmarks"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+momenta = { path = "../momenta" }
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "signals"
+harness = false
+
+[[bench]]
+name = "components"
+harness = false
+
+[[bench]]
+name = "rendering"
+harness = false
