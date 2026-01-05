@@ -167,16 +167,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5"
 
 [[package]]
-name = "docs"
-version = "0.1.0"
-dependencies = [
- "momenta",
- "momenta-router",
- "wasm-bindgen",
- "web-sys",
-]
-
-[[package]]
 name = "either"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -256,12 +246,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "34080505efa8e45a4b816c349525ebe327ceaa8559756f0356cba97ef3bf7432"
 
 [[package]]
-name = "matchit"
-version = "0.8.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2f926ade0c4e170215ae43342bf13b9310a437609c81f29f86c5df6657582ef9"
-
-[[package]]
 name = "memchr"
 version = "2.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -270,6 +254,8 @@ checksum = "f52b00d39961fc5b2736ea853c9cc86238e165017a493d1d5c8eac6bdc4cc273"
 [[package]]
 name = "momenta"
 version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "44fad5c6e4a30d2f07b8906a42596a82c5ea6e030e8023ea4bc7e2f9b70f4714"
 dependencies = [
  "momenta-core",
  "momenta-dom",
@@ -281,7 +267,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "momenta-benchmarks"
+name = "momenta-benchmarks-base"
 version = "0.1.0"
 dependencies = [
  "criterion",
@@ -291,6 +277,8 @@ dependencies = [
 [[package]]
 name = "momenta-core"
 version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a6289d05335da7dc1a265983a8d60d745ebbecdbec6f5591e53004d83e7f6cd5"
 dependencies = [
  "momenta-macros",
  "paste",
@@ -303,6 +291,8 @@ dependencies = [
 [[package]]
 name = "momenta-dom"
 version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e1e9c599cd05496918aa7c9c1b0de3f33ef6b5f73abf3c20b2acb44e7173a675"
 dependencies = [
  "momenta-core",
  "momenta-macros",
@@ -315,29 +305,13 @@ dependencies = [
 [[package]]
 name = "momenta-macros"
 version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0691f49b1be910f090a6983a9c9de3897f2306de1319d0763cbe819842668de5"
 dependencies = [
- "momenta",
  "proc-macro2",
  "quote",
  "regex",
  "syn",
-]
-
-[[package]]
-name = "momenta-router"
-version = "0.2.3"
-dependencies = [
- "matchit",
- "momenta",
- "wasm-bindgen",
- "web-sys",
-]
-
-[[package]]
-name = "momenta-test"
-version = "0.1.0"
-dependencies = [
- "momenta",
 ]
 
 [[package]]

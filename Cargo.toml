@@ -1,3 +1,4 @@
 [workspace]
-members = ["momenta-macros", "momenta-core", "momenta", "momenta-dom", "tests", "docs", "momenta-router"]
+members = ["momenta-macros", "momenta-core", "momenta", "momenta-dom", "tests", "docs", "momenta-router", "benches"]
+exclude = ["benches-base"]
 resolver = "3"
