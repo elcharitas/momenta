@@ -265,6 +265,63 @@ mod tests {
     }
 
     #[test]
+    fn test_component_prop_shorthand() {
+        struct Props {
+            title: &'static str,
+            children: Vec<Node>,
+        }
+
+        #[component]
+        fn Card(Props { title, children }: &Props) -> Node {
+            rsx!(
+                <section>
+                    <h2>{title}</h2>
+                    {children}
+                </section>
+            )
+        }
+
+        let title = "Hello";
+        let rsx = rsx!(
+            <Card {title}>
+                <p>"Body"</p>
+            </Card>
+        );
+
+        assert_eq!(
+            rsx.to_string(),
+            "<section><h2>Hello</h2><p>Body</p></section>"
+        )
+    }
+
+    #[test]
+    fn test_data_attribute_with_underscore_name() {
+        let rsx = rsx!(<div data_id="123" aria_label="Greeting" />);
+
+        assert_eq!(
+            rsx.to_string(),
+            "<div aria-label=\"Greeting\" data-id=\"123\"></div>"
+        )
+    }
+
+    #[test]
+    fn test_signal_vec_map_direct_rsx() {
+        let list = momenta::signals::run_scope_transient(
+            || {
+                let items = create_signal(vec!["A", "B", "C"]);
+                rsx!(
+                    <ul>
+                        {items.map(|item| <li>{item}</li>)}
+                    </ul>
+                )
+            },
+            |_| {},
+        );
+
+        assert_eq!(list.to_string(), "<ul><li>A</li><li>B</li><li>C</li></ul>")
+    }
+
+    #[test]
     fn test_closure_with_move_keyword() {
         let items = vec!["Item 1", "Item 2", "Item 3"];
         let list = rsx!(

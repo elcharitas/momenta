@@ -161,7 +161,7 @@ fn Button(props: &ButtonProps) -> Node {
 let items = create_signal(vec!["Apple", "Banana", "Cherry"]);
 rsx! {
     <ul>
-        {items.map(|item| rsx!(<li>{item}</li>))}
+        {items.map(|item| <li>{item}</li>)}
     </ul>
 }
 ```

@@ -517,13 +517,13 @@ pub fn derive_signal_value(input: TokenStream) -> TokenStream {
 ///
 /// // Expression
 /// let name = "World";
-/// rsx!(<div>Hello {name}</div>);
+/// rsx!(<div>"Hello " {name}</div>);
 ///
 /// // Event handlers with on:eventname syntax
 /// rsx!(<button on:click={handle_click}>Click me</button>);
 ///
-/// // Keyword attributes (automatically converted with _ suffix)
-/// rsx!(<input type="text" for="name" />);
+/// // Hyphenated HTML attributes use underscores in RSX
+/// rsx!(<div data_id="123" aria_label="Greeting" />);
 /// ```
 #[proc_macro]
 pub fn rsx(input: TokenStream) -> TokenStream {

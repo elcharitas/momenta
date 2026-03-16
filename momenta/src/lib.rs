@@ -80,24 +80,24 @@
 //! // Drop in any Rust expression with {}
 //! let dynamic = rsx!(
 //!     <div>
-//!         <h1>Hello, {name}!</h1>
-//!         <p>Count: {count}</p>
+//!         <h1>"Hello, " {name} "!"</h1>
+//!         <p>"Count: " {count}</p>
 //!     </div>
 //! );
 //!
 //! // Conditional rendering? Use the when! macro
 //! let show = true;
 //! let conditional = when!(show =>
-//!     <p>Now you see me</p>
+//!     <p>"Now you see me"</p>
 //! else
-//!     <p>Now you don&apos;t</p>
+//!     <p>"Now you don't"</p>
 //! );
 //!
 //! // Conditional classes? Easy!
 //! let is_active = true;
 //! let button = rsx!(
 //!     <button class={if is_active { "active" } else { "" }}>
-//!         Toggle
+//!         "Toggle"
 //!     </button>
 //! );
 //!
@@ -105,10 +105,7 @@
 //! let items = vec!["A", "B", "C"];
 //! let list = rsx!(
 //!     <ul>
-//!         {items.iter().map(|item| {
-//!             let item = item.to_string();
-//!             <li>{item}</li>
-//!         })}
+//!         {items.iter().map(|item| <li>{item}</li>)}
 //!     </ul>
 //! );
 //! ```
@@ -162,6 +159,7 @@
 //!         data_role="admin"
 //!     />
 //! );
+//! // Hyphenated HTML attributes use underscores in RSX.
 //! ```
 //!
 

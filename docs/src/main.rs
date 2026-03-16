@@ -1461,8 +1461,8 @@ fn HelloWorld() -> Node {
     rsx! {
         <div>
             <h1>"Hello, " {name} "!"</h1>
-            <p>Welcome to Momenta.</p> // see how quotes are totally optional?
-            <p>"😉"</p> // N/B: currently, Momenta requires quotes for emojis
+            <p>"Welcome to Momenta."</p>
+            <p>"😉"</p>
         </div>
     }
 }"#}
@@ -1490,10 +1490,7 @@ let input = rsx! { <input type="text" /> };
 // Note: HTML attributes with hyphens use underscores in RSX
 // e.g., `data-id` becomes `data_id`
 let custom = rsx! { <div data_id="123"></div> };
-
-// Attributes that conflict with Rust keywords use trailing underscore
-// e.g., `type` becomes `type_`
-let input = rsx! { <input type="text" /> };"#}
+"#}
                 />
                 <h3 id="attributes">Dynamic Attributes</h3>
                 <CodeBlock
@@ -1564,9 +1561,7 @@ let element = rsx! {
 let items = create_signal(vec!["Apple", "Banana", "Cherry"]);
 let list = rsx! {
     <ul>
-        {items.map(|item| rsx! {
-            <li>{item}</li>
-        })}
+        {items.map(|item| <li>{item}</li>)}
     </ul>
 };"#}
                 />
@@ -1589,11 +1584,13 @@ let elements = rsx! {
 
                 <h2 class="font-bold uppercase">Best Practices</h2>
                 <ul>
+                    <li>"Prefer quoted text nodes for predictable RSX output"</li>
+                    <li>"Use underscores for hyphenated attribute names like data_id"</li>
                     <li>"Keep your components small and focused on a single responsibility"</li>
                     <li>"Use signals for state that changes over time"</li>
                     <li>"Extract repeated patterns into reusable components"</li>
                     <li>"Use the when! macro for conditional rendering"</li>
-                    <li>"Use iterators with .map() for rendering lists"</li>
+                    <li>"Use direct .map() closures for rendering lists"</li>
                 </ul>
 
                 <div class="mt-12 flex items-center justify-between border-t border-gray-200 dark:border-gray-800 pt-6">
