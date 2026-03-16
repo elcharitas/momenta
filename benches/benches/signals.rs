@@ -2,11 +2,11 @@ use criterion::{Criterion, black_box, criterion_group, criterion_main};
 
 fn bench_signal_creation(c: &mut Criterion) {
     use momenta::prelude::*;
-    use momenta::signals::run_scope;
+    use momenta::signals::run_scope_transient;
 
-    c.bench_function("signal_creation_current", |b| {
+    c.bench_function("signal_creation", |b| {
         b.iter(|| {
-            run_scope(
+            run_scope_transient(
                 || {
                     let signal = create_signal(black_box(0));
                     black_box(signal);
@@ -20,11 +20,11 @@ fn bench_signal_creation(c: &mut Criterion) {
 
 fn bench_signal_updates(c: &mut Criterion) {
     use momenta::prelude::*;
-    use momenta::signals::run_scope;
+    use momenta::signals::run_scope_transient;
 
-    c.bench_function("signal_updates_current", |b| {
+    c.bench_function("signal_updates", |b| {
         b.iter(|| {
-            run_scope(
+            run_scope_transient(
                 || {
                     let signal = create_signal(0);
                     for i in 0..100 {
@@ -41,11 +41,11 @@ fn bench_signal_updates(c: &mut Criterion) {
 
 fn bench_signal_reads(c: &mut Criterion) {
     use momenta::prelude::*;
-    use momenta::signals::run_scope;
+    use momenta::signals::run_scope_transient;
 
-    c.bench_function("signal_reads_current", |b| {
+    c.bench_function("signal_reads", |b| {
         b.iter(|| {
-            run_scope(
+            run_scope_transient(
                 || {
                     let signal = create_signal(42);
                     for _ in 0..100 {
@@ -61,21 +61,13 @@ fn bench_signal_reads(c: &mut Criterion) {
 
 fn bench_computed_signals(c: &mut Criterion) {
     use momenta::prelude::*;
-    use momenta::signals::run_scope;
+    use momenta::signals::run_scope_transient;
 
-    c.bench_function("computed_signals_current", |b| {
+    c.bench_function("computed_signals", |b| {
         b.iter(|| {
-            run_scope(
+            run_scope_transient(
                 || {
-                    let signal = create_signal(10);
-                    // let computed = create_computed(move || signal.get() * 2);
-
-                    for i in 0..50 {
-                        black_box(i);
-                        let _ = signal;
-                        // signal.set(black_box(i));
-                        // black_box(computed.get());
-                    }
+                    let _signal = create_signal(10);
                     rsx!(<div />)
                 },
                 |_| {},
@@ -86,28 +78,16 @@ fn bench_computed_signals(c: &mut Criterion) {
 
 fn bench_effects(c: &mut Criterion) {
     use momenta::prelude::*;
-    use momenta::signals::run_scope;
+    use momenta::signals::run_scope_transient;
 
-    c.bench_function("effects_current", |b| {
+    c.bench_function("effects", |b| {
         b.iter(|| {
-            run_scope(
+            run_scope_transient(
                 || {
                     let signal = create_signal(0);
-                    let effect_runs = create_signal(0);
-
-                    create_effect({
-                        let signal = signal;
-                        let effect_runs = effect_runs;
-                        move || {
-                            let _ = signal.get();
-                            effect_runs.set(effect_runs.get() + 1);
-                        }
+                    create_effect(move || {
+                        let _ = signal.get();
                     });
-
-                    // for i in 0..20 {
-                    //     signal.set(black_box(i));
-                    // }
-                    // black_box(effect_runs.get());
                     rsx!(<div />)
                 },
                 |_| {},

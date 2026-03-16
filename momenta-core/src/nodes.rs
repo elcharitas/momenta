@@ -109,7 +109,7 @@ impl HtmlWriter {
                     self.write_open_tag(&el.tag, &el.attributes);
                 }
 
-                if el.children.is_empty() && !el.inner_html.is_empty() {
+                if !el.inner_html.is_empty() {
                     self.buffer.push_str(&el.inner_html);
                 } else {
                     for child in &el.children {
@@ -497,11 +497,11 @@ impl Node {
                 // Inner HTML
                 if !el.inner_html.is_empty() {
                     size += el.inner_html.len();
-                }
-
-                // Children
-                for child in &el.children {
-                    size += child.estimate_html_size();
+                } else {
+                    // Children
+                    for child in &el.children {
+                        size += child.estimate_html_size();
+                    }
                 }
 
                 size
@@ -736,5 +736,28 @@ where
 {
     fn from(callback: F) -> Self {
         Self::new(callback)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloc::{borrow::Cow, collections::BTreeMap, string::String, vec};
+
+    #[test]
+    fn inner_html_takes_precedence_over_children_in_html_output() {
+        let node = Node::Element(Element {
+            key: String::new(),
+            tag: Cow::Borrowed("div"),
+            attributes: BTreeMap::new(),
+            inner_html: "<strong>unsafe</strong>".to_string(),
+            children: vec![Node::Text("child".to_string())],
+            #[cfg(feature = "wasm")]
+            events: BTreeMap::new(),
+            #[cfg(not(feature = "wasm"))]
+            events: BTreeMap::new(),
+        });
+
+        assert_eq!(node.to_html(), "<div><strong>unsafe</strong></div>");
     }
 }

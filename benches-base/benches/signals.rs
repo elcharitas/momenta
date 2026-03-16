@@ -67,7 +67,7 @@ fn bench_computed_signals(c: &mut Criterion) {
         b.iter(|| {
             run_scope(
                 || {
-                    let signal = create_signal(10);
+                    let _signal = create_signal(10);
                     // let computed = create_computed(move || signal.get() * 2);
 
                     // create_effect(move || {
@@ -94,7 +94,7 @@ fn bench_effects(c: &mut Criterion) {
             run_scope(
                 || {
                     let signal = create_signal(0);
-                    let effect_runs = create_signal(0);
+                    let _effect_runs = create_signal(0);
 
                     create_effect(move || {
                         signal.get();

@@ -10,6 +10,9 @@
 
 extern crate alloc;
 
+use alloc::{string::String, vec::Vec};
+#[cfg(not(feature = "wasm"))]
+use momenta_core::signals::{has_current_scope, run_scope_transient};
 use momenta_core::{
     nodes::{Component, Node},
     signals::run_scope,
@@ -17,6 +20,25 @@ use momenta_core::{
 
 pub use momenta_core::nodes;
 pub use paste::paste;
+
+#[cfg(feature = "wasm")]
+fn append_static_html(mount: &web_sys::Element, html: &str) {
+    if let Some(document) = web_sys::window().and_then(|window| window.document()) {
+        if let Ok(container) = document.create_element("div") {
+            container.set_inner_html(html);
+
+            let mut children = Vec::new();
+            while let Some(child) = container.first_child() {
+                children.push(child);
+                let _ = container.remove_child(&children[children.len() - 1]);
+            }
+
+            for child in children {
+                let _ = mount.append_child(&child);
+            }
+        }
+    }
+}
 
 #[cfg(feature = "wasm")]
 #[wasm_bindgen::prelude::wasm_bindgen]
@@ -100,14 +122,15 @@ impl WasmRender for momenta_core::nodes::Element {
             let dangerous_inner_html = self.html();
             if !dangerous_inner_html.is_empty() {
                 element.set_inner_html(dangerous_inner_html);
+            } else {
+                // render childnode
+                for child in self.children() {
+                    child.render(&element);
+                }
             }
             // add attributes
             for (name, value) in self.attributes() {
                 let _ = element.set_attribute(name, value);
-            }
-            // render childnode
-            for child in self.children() {
-                child.render(&element);
             }
             // attach events
             for (event_type, callback) in self.events() {
@@ -151,12 +174,12 @@ impl WasmRender for momenta_core::nodes::Element {
         // Diff and patch attributes
         // Remove old attributes that are no longer present
         let old_attrs = old_element.attributes();
-        for i in 0..old_attrs.length() {
-            if let Some(attr) = old_attrs.item(i) {
-                let attr_name = attr.name();
-                if !self.attributes().contains_key(&attr_name) {
-                    let _ = old_element.remove_attribute(&attr_name);
-                }
+        let old_attr_names: Vec<String> = (0..old_attrs.length())
+            .filter_map(|i| old_attrs.item(i).map(|attr| attr.name()))
+            .collect();
+        for attr_name in old_attr_names {
+            if !self.attributes().contains_key(&attr_name) {
+                let _ = old_element.remove_attribute(&attr_name);
             }
         }
 
@@ -220,8 +243,15 @@ impl WasmRender for Node {
                 }
                 None
             }
-            Node::Comment(_) => {
-                // TODO: implement comment rendering
+            Node::Comment(comment) => {
+                if let Some(document) = web_sys::window().and_then(|window| window.document()) {
+                    let comment_node = document.create_comment(comment);
+                    let _ = mount.append_child(&comment_node);
+                }
+                None
+            }
+            Node::Static(html) => {
+                append_static_html(mount, html);
                 None
             }
             _ => None,
@@ -392,24 +422,37 @@ fn render_component<C: Component>(
 where
     <C as Component>::Props: Send + Sync + 'static,
 {
-    run_scope(
-        move || C::render(&props),
-        move |node| {
-            #[cfg(feature = "wasm")]
-            if let Node::Element(el) = node {
-                if let Some(existing_el) =
-                    element_cache::with_cache(|cache| cache.get(el.key()).cloned())
-                {
-                    // Use diff and patch for more efficient updates
-                    if let Some(parent) = existing_el.parent_element() {
-                        el.diff_and_patch(&existing_el, &parent);
-                        return;
+    #[cfg(feature = "wasm")]
+    {
+        run_scope(
+            move || C::render(&props),
+            move |node| {
+                if let Node::Element(el) = node {
+                    if let Some(existing_el) =
+                        element_cache::with_cache(|cache| cache.get(el.key()).cloned())
+                    {
+                        // Use diff and patch for more efficient updates
+                        if let Some(parent) = existing_el.parent_element() {
+                            el.diff_and_patch(&existing_el, &parent);
+                            return;
+                        }
                     }
                 }
-            }
-            callback(node)
-        },
-    )
+                callback(node)
+            },
+        )
+    }
+
+    #[cfg(not(feature = "wasm"))]
+    {
+        if has_current_scope() {
+            let node = C::render(&props);
+            callback(&node);
+            node
+        } else {
+            run_scope_transient(move || C::render(&props), move |node| callback(node))
+        }
+    }
 }
 
 #[macro_export]

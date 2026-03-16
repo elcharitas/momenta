@@ -1,182 +1,96 @@
 #!/bin/bash
 set -e
 
-# Script to parse criterion benchmark results and generate report.md
-
 WORKSPACE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPORT_FILE="${WORKSPACE_ROOT}/report.md"
-
-# Criterion output directories
 BASE_TARGET_DIR="${WORKSPACE_ROOT}/benches-base/target/criterion"
 CURRENT_TARGET_DIR="${WORKSPACE_ROOT}/target/criterion"
 
-echo "# Benchmark Report" > "$REPORT_FILE"
-echo "" >> "$REPORT_FILE"
-echo "Generated on: $(date)" >> "$REPORT_FILE"
-echo "" >> "$REPORT_FILE"
+python3 - <<'PY' "$BASE_TARGET_DIR" "$CURRENT_TARGET_DIR" "$REPORT_FILE"
+import json
+import sys
+from datetime import datetime
+from pathlib import Path
 
-# Temporary files for storing results
-BASE_RESULTS=$(mktemp)
-CURRENT_RESULTS=$(mktemp)
+base_dir = Path(sys.argv[1])
+current_dir = Path(sys.argv[2])
+report_file = Path(sys.argv[3])
 
-# Function to extract benchmark results from criterion JSON
-extract_results() {
-    local target_dir=$1
-    local output_file=$2
 
-    if [ ! -d "$target_dir" ]; then
+def collect_results(root: Path):
+    results = {}
+    if not root.exists():
+        return results
+
+    for estimates in sorted(root.glob('*/new/estimates.json')):
+        name = estimates.parts[-3]
+        data = json.loads(estimates.read_text())
+        results[name] = {
+            'mean': data['mean']['point_estimate'],
+            'std_dev': data['std_dev']['point_estimate'],
+        }
+    return results
+
+
+def format_time(value: float) -> str:
+    if value >= 1_000_000_000:
+        return f"{value / 1_000_000_000:.2f}s"
+    if value >= 1_000_000:
+        return f"{value / 1_000_000:.2f}ms"
+    if value >= 1_000:
+        return f"{value / 1_000:.2f}μs"
+    return f"{value:.2f}ns"
+
+
+def display_name(name: str) -> str:
+    return name.replace('_', ' ')
+
+
+def write_table(handle, title: str, results):
+    if not results:
         return
-    fi
+    handle.write(f"## {title}\n\n")
+    handle.write("| Test Case | Mean Time | Std Dev |\n")
+    handle.write("|-----------|-----------|---------|\n")
+    for name in sorted(results):
+        handle.write(
+            f"| {display_name(name)} | {format_time(results[name]['mean'])} | ±{format_time(results[name]['std_dev'])} |\n"
+        )
+    handle.write("\n")
 
-    # Find all benchmark groups
-    for bench_dir in "$target_dir"/*; do
-        if [ -d "$bench_dir" ] && [ "$(basename "$bench_dir")" != "report" ]; then
-            bench_name=$(basename "$bench_dir")
 
-            # Skip if it's a base directory
-            if [ "$bench_name" = "base" ]; then
-                continue
-            fi
+base_results = collect_results(base_dir)
+current_results = collect_results(current_dir)
+common = sorted(set(base_results) & set(current_results))
 
-            # Look for estimates.json in all subdirectories
-            find "$bench_dir" -name "new" -type d | while read -r group_dir; do
-                estimates_file="$group_dir/estimates.json"
-                if [ -f "$estimates_file" ]; then
-                    # Get the relative path for the group name
-                    group_name=$(dirname "$group_dir" | sed "s|$bench_dir/||" | sed 's|/base$||')
+with report_file.open('w') as handle:
+    handle.write('# Benchmark Report\n\n')
+    handle.write(f"Generated on: {datetime.now().astimezone().strftime('%a %b %d %H:%M:%S %Z %Y')}\n\n")
 
-                    # Clean up the benchmark name
-                    clean_name=$(echo "$bench_name" | sed 's/_/ /g')
+    write_table(handle, 'Baseline (v0.2.3)', base_results)
+    write_table(handle, 'Current Version', current_results)
 
-                    # Extract mean time from estimates.json
-                    if command -v jq &> /dev/null; then
-                        mean=$(jq -r '.mean.point_estimate' "$estimates_file")
-                        std_dev=$(jq -r '.std_dev.point_estimate' "$estimates_file")
-
-                        # Store raw nanoseconds value for comparison
-                        echo "$clean_name|$mean|$std_dev" >> "$output_file"
-                    fi
-                fi
-            done
-        fi
-    done
-}
-
-# Function to format time with appropriate unit
-format_time() {
-    local mean=$1
-    local std_dev=$2
-
-    if (( $(echo "$mean >= 1000000000" | bc -l) )); then
-        mean_display=$(echo "scale=2; $mean / 1000000000" | bc)
-        std_display=$(echo "scale=2; $std_dev / 1000000000" | bc)
-        echo "${mean_display}s ± ${std_display}s"
-    elif (( $(echo "$mean >= 1000000" | bc -l) )); then
-        mean_display=$(echo "scale=2; $mean / 1000000" | bc)
-        std_display=$(echo "scale=2; $std_dev / 1000000" | bc)
-        echo "${mean_display}ms ± ${std_display}ms"
-    elif (( $(echo "$mean >= 1000" | bc -l) )); then
-        mean_display=$(echo "scale=2; $mean / 1000" | bc)
-        std_display=$(echo "scale=2; $std_dev / 1000" | bc)
-        echo "${mean_display}μs ± ${std_display}μs"
-    else
-        mean_display=$(echo "scale=2; $mean" | bc)
-        std_display=$(echo "scale=2; $std_dev" | bc)
-        echo "${mean_display}ns ± ${std_display}ns"
-    fi
-}
-
-# Extract results from both benchmark runs
-extract_results "$BASE_TARGET_DIR" "$BASE_RESULTS"
-extract_results "$CURRENT_TARGET_DIR" "$CURRENT_RESULTS"
-
-# Generate baseline table if data exists
-if [ -s "$BASE_RESULTS" ]; then
-    echo "## Baseline (v0.2.3)" >> "$REPORT_FILE"
-    echo "" >> "$REPORT_FILE"
-    echo "| Test Case | Mean Time | Std Dev |" >> "$REPORT_FILE"
-    echo "|-----------|-----------|---------|" >> "$REPORT_FILE"
-
-    while IFS='|' read -r name mean std_dev; do
-        formatted=$(format_time "$mean" "$std_dev")
-        # Split formatted result to extract mean and std dev
-        mean_part=$(echo "$formatted" | cut -d'±' -f1 | xargs)
-        std_part=$(echo "$formatted" | cut -d'±' -f2 | xargs)
-        echo "| $name | $mean_part | ±$std_part |" >> "$REPORT_FILE"
-    done < "$BASE_RESULTS"
-
-    echo "" >> "$REPORT_FILE"
-fi
-
-# Generate current version table if data exists
-if [ -s "$CURRENT_RESULTS" ]; then
-    echo "## Current Version" >> "$REPORT_FILE"
-    echo "" >> "$REPORT_FILE"
-    echo "| Test Case | Mean Time | Std Dev |" >> "$REPORT_FILE"
-    echo "|-----------|-----------|---------|" >> "$REPORT_FILE"
-
-    while IFS='|' read -r name mean std_dev; do
-        formatted=$(format_time "$mean" "$std_dev")
-        mean_part=$(echo "$formatted" | cut -d'±' -f1 | xargs)
-        std_part=$(echo "$formatted" | cut -d'±' -f2 | xargs)
-        echo "| $name | $mean_part | ±$std_part |" >> "$REPORT_FILE"
-    done < "$CURRENT_RESULTS"
-
-    echo "" >> "$REPORT_FILE"
-fi
-
-# Add comparison section if both results exist
-if [ -s "$BASE_RESULTS" ] && [ -s "$CURRENT_RESULTS" ]; then
-    echo "## Performance Comparison" >> "$REPORT_FILE"
-    echo "" >> "$REPORT_FILE"
-    echo "| Test Case | Baseline | Current | Change | Status |" >> "$REPORT_FILE"
-    echo "|-----------|----------|---------|--------|--------|" >> "$REPORT_FILE"
-
-    # Create associative arrays for lookup
-    declare -A base_times
-    declare -A current_times
-
-    while IFS='|' read -r name mean std_dev; do
-        base_times["$name"]="$mean"
-    done < "$BASE_RESULTS"
-
-    while IFS='|' read -r name mean std_dev; do
-        current_times["$name"]="$mean"
-    done < "$CURRENT_RESULTS"
-
-    # Compare matching benchmarks
-    for name in "${!base_times[@]}"; do
-        if [ -n "${current_times[$name]}" ]; then
-            base_val="${base_times[$name]}"
-            current_val="${current_times[$name]}"
-
-            # Calculate percentage change
-            change=$(echo "scale=2; (($current_val - $base_val) / $base_val) * 100" | bc)
-
-            # Format times
-            base_formatted=$(format_time "$base_val" "0" | cut -d'±' -f1 | xargs)
-            current_formatted=$(format_time "$current_val" "0" | cut -d'±' -f1 | xargs)
-
-            # Determine status emoji
-            if (( $(echo "$change < -5" | bc -l) )); then
-                status="🚀 Faster"
-                change_display="${change#-}% faster"
-            elif (( $(echo "$change > 5" | bc -l) )); then
-                status="⚠️ Slower"
-                change_display="${change}% slower"
-            else
-                status="➖ Similar"
-                change_display="${change}%"
-            fi
-
-            echo "| $name | $base_formatted | $current_formatted | $change_display | $status |" >> "$REPORT_FILE"
-        fi
-    done
-
-    echo "" >> "$REPORT_FILE"
-fi
-
-# Cleanup temporary files
-rm -f "$BASE_RESULTS" "$CURRENT_RESULTS"
+    if common:
+        handle.write('## Performance Comparison\n\n')
+        handle.write('| Test Case | Baseline | Current | Change | Status |\n')
+        handle.write('|-----------|----------|---------|--------|--------|\n')
+        for name in common:
+            baseline = base_results[name]['mean']
+            current = current_results[name]['mean']
+            change = ((current - baseline) / baseline) * 100
+            if change < -5:
+                status = 'Faster'
+                change_display = f"{abs(change):.2f}% faster"
+            elif change > 5:
+                status = 'Slower'
+                change_display = f"{change:.2f}% slower"
+            else:
+                status = 'Similar'
+                change_display = f"{change:.2f}%"
+            handle.write(
+                f"| {display_name(name)} | {format_time(baseline)} | {format_time(current)} | {change_display} | {status} |\n"
+            )
+        handle.write('\n')
+PY
 
 echo "✅ Report generated at: $REPORT_FILE"
