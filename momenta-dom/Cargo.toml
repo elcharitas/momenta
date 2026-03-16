@@ -17,6 +17,7 @@ momenta-macros = { path = "../momenta-macros", version = "0.2.3" }
 wasm-bindgen = { version = "0.2", optional = true }
 wasm-bindgen-futures = { version = "0.4", optional = true }
 web-sys = { version = "0.3", optional = true, features = [
+    "Comment",
     "Document",
     "Element",
     "HtmlElement",

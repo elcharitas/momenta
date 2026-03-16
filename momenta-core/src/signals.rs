@@ -835,12 +835,44 @@ pub fn run_scope(
     render_scope(scope_id)
 }
 
+/// Run a scope once and dispose all reactive state created for it afterwards.
+pub fn run_scope_transient(
+    scope_fn: impl FnMut() -> Node + Send + 'static,
+    callback: impl Fn(&Node) + Send + Sync + 'static,
+) -> Node {
+    let scope_id = {
+        let mut next_id = NEXT_SCOPE_ID.lock();
+        let current = *next_id;
+        *next_id = current + 1;
+        current
+    };
+
+    {
+        let mut scope_functions = SCOPE_FUNCTIONS.lock();
+        scope_functions.insert(scope_id, Box::new(scope_fn));
+    }
+
+    {
+        let mut scope_callbacks = SCOPE_CALLBACKS.lock();
+        scope_callbacks.insert(scope_id, Arc::new(callback));
+    }
+
+    let node = render_scope(scope_id);
+    dispose_scope(scope_id);
+    node
+}
+
 //==============================================================================
 // INTERNAL FUNCTIONS
 //==============================================================================
 
 pub(crate) fn get_current_scope() -> Option<usize> {
     *CURRENT_SCOPE.lock()
+}
+
+/// Returns true when code is currently executing inside a reactive scope.
+pub fn has_current_scope() -> bool {
+    get_current_scope().is_some()
 }
 
 fn set_current_scope(scope_id: Option<usize>) {
@@ -894,6 +926,50 @@ fn clear_scope_effects(scope_id: usize) {
             }
         }
     }
+}
+
+fn dispose_scope(scope_id: usize) {
+    clear_scope_effects(scope_id);
+    reset_signal_counters(scope_id);
+    reset_effect_counters(scope_id);
+
+    SCOPE_FUNCTIONS.lock().remove(&scope_id);
+    SCOPE_CALLBACKS.lock().remove(&scope_id);
+    PENDING_SCOPE_RENDERS.lock().remove(&scope_id);
+    SCOPE_SIGNAL_CHANGES
+        .lock()
+        .retain(|(signal_scope_id, _)| *signal_scope_id != scope_id);
+    EXECUTING_EFFECTS
+        .lock()
+        .retain(|(effect_scope_id, _)| *effect_scope_id != scope_id);
+
+    let signal_ids: Vec<_> = {
+        let signals = SIGNALS.lock();
+        signals
+            .keys()
+            .copied()
+            .filter(|(signal_scope_id, _)| *signal_scope_id == scope_id)
+            .collect()
+    };
+
+    {
+        let mut signals = SIGNALS.lock();
+        for signal_id in &signal_ids {
+            signals.remove(signal_id);
+        }
+    }
+
+    {
+        let mut signal_deps = SIGNAL_DEPENDENCIES.lock();
+        for signal_id in &signal_ids {
+            signal_deps.remove(signal_id);
+        }
+        for scopes in signal_deps.values_mut() {
+            scopes.remove(&scope_id);
+        }
+    }
+
+    SCOPE_DEPENDENCIES.lock().remove(&scope_id);
 }
 
 struct ScopeGuard {
@@ -1061,6 +1137,7 @@ fn run_scope_effects(scope_id: usize) {
 }
 
 fn process_pending_renders() {
+    /// Largely inspired by React's safeguard against infinite update loops, we set a maximum number of iterations for processing pending renders. If this limit is reached, we break out of the loop to prevent an infinite loop scenario, which can occur if effects continuously trigger updates without a stable state.
     const MAX_ITERATIONS: usize = 100;
     let mut iterations = 0;
 
@@ -1130,7 +1207,6 @@ pub fn create_resource<T, F>(fetcher: F) -> Resource<T>
 where
     T: SignalValue + PartialEq + 'static,
     F: AsyncFn() -> T + Send + Clone + 'static,
-    Option<T>: Copy,
 {
     let value = create_signal(None);
     let status = create_signal(ResourceStatus::Idle);
@@ -1332,5 +1408,45 @@ mod tests {
                 .keys()
                 .any(|(effect_scope_id, _)| *effect_scope_id == scope_id)
         );
+    }
+
+    #[test]
+    fn create_resource_accepts_non_copy_values() {
+        fn assert_resource_factory<F>(_fetcher: F)
+        where
+            F: AsyncFn() -> String + Send + Clone + 'static,
+        {
+            let _factory: fn(F) -> Resource<String> = create_resource::<String, F>;
+        }
+
+        async fn fetch_string() -> String {
+            String::from("ready")
+        }
+
+        assert_resource_factory(fetch_string);
+    }
+
+    #[test]
+    fn transient_scope_disposes_runtime_state() {
+        let _guard = TEST_MUTEX.lock();
+        reset_runtime_state();
+
+        run_scope_transient(
+            || {
+                let signal = create_signal(1);
+                create_effect(move || {
+                    let _ = signal.get();
+                });
+                Node::Empty
+            },
+            |_| {},
+        );
+
+        assert!(SIGNALS.lock().is_empty());
+        assert!(SCOPE_DEPENDENCIES.lock().is_empty());
+        assert!(SIGNAL_DEPENDENCIES.lock().is_empty());
+        assert!(SCOPE_EFFECTS.lock().is_empty());
+        assert!(SCOPE_CALLBACKS.lock().is_empty());
+        assert!(SCOPE_FUNCTIONS.lock().is_empty());
     }
 }

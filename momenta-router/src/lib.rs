@@ -55,10 +55,7 @@ impl RouterContext {
         let location = window.location();
 
         let raw_path = match mode {
-            RouterMode::Hash => location
-                .hash()
-                .unwrap_or_default()
-                .to_string(),
+            RouterMode::Hash => location.hash().unwrap_or_default().to_string(),
             RouterMode::Pathname => location.pathname().unwrap_or_default().to_string(),
         };
 

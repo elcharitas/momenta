@@ -10,6 +10,8 @@ echo "🚀 Running Momenta Benchmark Suite"
 echo "===================================="
 echo ""
 
+rm -rf "${WORKSPACE_ROOT}/benches-base/target/criterion" "${WORKSPACE_ROOT}/target/criterion"
+
 # Run baseline benchmarks (v0.2.3)
 echo "📊 Running baseline benchmarks (v0.2.3)..."
 cd "${WORKSPACE_ROOT}/benches-base"

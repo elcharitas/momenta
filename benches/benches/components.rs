@@ -1,5 +1,5 @@
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use momenta::signals::run_scope;
+use momenta::signals::run_scope_transient;
 
 fn bench_simple_component(c: &mut Criterion) {
     use momenta::prelude::*;
@@ -56,9 +56,9 @@ fn bench_nested_components(c: &mut Criterion) {
     fn Parent() -> Node {
         rsx! {
             <div>
-                <Child />
-                <Child />
-                <Child />
+                {Child::render(&Default::default())}
+                {Child::render(&Default::default())}
+                {Child::render(&Default::default())}
             </div>
         }
     }
@@ -66,6 +66,35 @@ fn bench_nested_components(c: &mut Criterion) {
     c.bench_function("nested_components", |b| {
         b.iter(|| {
             black_box(Parent::render(&Default::default()));
+        });
+    });
+}
+
+fn bench_nested_component_syntax(c: &mut Criterion) {
+    use momenta::prelude::*;
+
+    #[component]
+    fn Child() -> Node {
+        rsx! { <span>Child</span> }
+    }
+
+    #[component]
+    fn Parent() -> Node {
+        rsx! {
+            <div>
+                <Child />
+                <Child />
+                <Child />
+            </div>
+        }
+    }
+
+    c.bench_function("nested_component_syntax", |b| {
+        b.iter(|| {
+            black_box(run_scope_transient(
+                || Parent::render(&Default::default()),
+                |_| {},
+            ));
         });
     });
 }
@@ -87,7 +116,10 @@ fn bench_component_with_state(c: &mut Criterion) {
 
     c.bench_function("component_with_state", |b| {
         b.iter(|| {
-            black_box(run_scope(|| Counter::render(&Default::default()), |_| {}));
+            black_box(run_scope_transient(
+                || Counter::render(&Default::default()),
+                |_| {},
+            ));
         });
     });
 }
@@ -100,6 +132,7 @@ criterion_group! {
     targets = bench_simple_component,
         bench_component_with_props,
         bench_nested_components,
+        bench_nested_component_syntax,
         bench_component_with_state
 }
 criterion_main!(benches);
