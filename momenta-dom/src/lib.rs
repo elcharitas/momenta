@@ -113,6 +113,9 @@ impl WasmRender for momenta_core::nodes::Element {
             for (event_type, callback) in self.events() {
                 attach_event_handler(&element, event_type, callback.clone());
             }
+            if !self.events().is_empty() {
+                let _ = element.set_attribute("data-momenta-has-events", "1");
+            }
 
             element_cache::with_cache(|cache| {
                 use alloc::string::ToString;
@@ -128,6 +131,14 @@ impl WasmRender for momenta_core::nodes::Element {
         old_element: &web_sys::Element,
         _mount: &web_sys::Element,
     ) -> Option<web_sys::Element> {
+        if !self.events().is_empty() || old_element.has_attribute("data-momenta-has-events") {
+            if let Some(parent) = old_element.parent_element() {
+                let _ = parent.remove_child(old_element);
+                return self.render(&parent);
+            }
+            return None;
+        }
+
         // Check if tag name changed - if so, replace entire element
         if old_element.tag_name().to_lowercase() != self.tag() {
             if let Some(parent) = old_element.parent_element() {
@@ -196,8 +207,10 @@ impl WasmRender for Node {
     fn render(&self, mount: &web_sys::Element) -> Option<web_sys::Element> {
         match self {
             Node::Text(text) => {
-                let current_text = mount.text_content().unwrap_or_default();
-                mount.set_text_content(Some(&(current_text + text)));
+                if let Some(document) = web_sys::window().and_then(|window| window.document()) {
+                    let text_node = document.create_text_node(text);
+                    let _ = mount.append_child(&text_node);
+                }
                 None
             }
             Node::Element(el) => el.render(mount),
@@ -222,8 +235,11 @@ impl WasmRender for Node {
     ) -> Option<web_sys::Element> {
         match self {
             Node::Text(text) => {
-                if old_element.text_content().as_deref() != Some(text) {
-                    old_element.set_text_content(Some(text));
+                if let Some(parent) = old_element.parent_node() {
+                    if let Some(document) = web_sys::window().and_then(|window| window.document()) {
+                        let text_node = document.create_text_node(text);
+                        let _ = parent.replace_child(&text_node, old_element);
+                    }
                 }
                 None
             }

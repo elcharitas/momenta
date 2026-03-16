@@ -126,11 +126,13 @@ impl<T: SignalValue + 'static> SignalValue for Option<T> {
 //==============================================================================
 
 /// Reactive value that triggers re-renders when changed
-#[derive(Copy, Debug)]
+#[derive(Debug)]
 pub struct Signal<T> {
     id: (usize, usize),
     _marker: PhantomData<T>,
 }
+
+impl<T> Copy for Signal<T> {}
 
 impl<T: SignalValue + Not<Output = bool> + Clone + 'static> Not for Signal<T> {
     type Output = bool;
@@ -867,6 +869,33 @@ fn reset_effect_counters(scope_id: usize) {
     SCOPE_EFFECT_COUNTERS.lock().remove(&scope_id);
 }
 
+fn clear_scope_effects(scope_id: usize) {
+    let effect_ids: Vec<_> = {
+        let effects = SCOPE_EFFECTS.lock();
+        effects
+            .keys()
+            .copied()
+            .filter(|(effect_scope_id, _)| *effect_scope_id == scope_id)
+            .collect()
+    };
+
+    {
+        let mut effects = SCOPE_EFFECTS.lock();
+        for effect_id in &effect_ids {
+            effects.remove(effect_id);
+        }
+    }
+
+    {
+        let mut cleanups = SCOPE_EFFECT_CLEANUPS.lock();
+        for effect_id in effect_ids {
+            if let Some(cleanup) = cleanups.remove(&effect_id) {
+                cleanup();
+            }
+        }
+    }
+}
+
 struct ScopeGuard {
     previous_scope: Option<usize>,
 }
@@ -943,6 +972,7 @@ fn render_scope(scope_id: usize) -> Node {
     };
 
     let node = scope_fn.map(|mut fnc| {
+        clear_scope_effects(scope_id);
         let mut node = fnc();
         {
             let mut scope_functions = SCOPE_FUNCTIONS.lock();
@@ -1134,8 +1164,34 @@ mod tests {
     use alloc::sync::Arc;
     use core::sync::atomic::{AtomicUsize, Ordering};
 
+    static TEST_MUTEX: spin::Mutex<()> = spin::Mutex::new(());
+
+    fn reset_runtime_state() {
+        *CURRENT_SCOPE.lock() = None;
+        *RENDERING_SCOPE.lock() = 0;
+        *NEXT_SCOPE_ID.lock() = 1;
+        *BATCH_UPDATES.lock() = false;
+
+        SCOPE_SIGNAL_COUNTERS.lock().clear();
+        SCOPE_EFFECT_COUNTERS.lock().clear();
+        SIGNALS.lock().clear();
+        SCOPE_SIGNAL_CHANGES.lock().clear();
+        SCOPE_FUNCTIONS.lock().clear();
+        SCOPE_CALLBACKS.lock().clear();
+        SCOPE_EFFECTS.lock().clear();
+        SCOPE_EFFECT_CLEANUPS.lock().clear();
+        SCOPE_DEPENDENCIES.lock().clear();
+        SIGNAL_DEPENDENCIES.lock().clear();
+        PENDING_SCOPE_RENDERS.lock().clear();
+        MEMO_CACHE.lock().clear();
+        EXECUTING_EFFECTS.lock().clear();
+    }
+
     #[test]
     fn test_nested_scopes() {
+        let _guard = TEST_MUTEX.lock();
+        reset_runtime_state();
+
         run_scope(
             || {
                 let outer_signal = create_signal(0);
@@ -1159,6 +1215,9 @@ mod tests {
 
     #[test]
     fn test_signal_and_effect_in_scope() {
+        let _guard = TEST_MUTEX.lock();
+        reset_runtime_state();
+
         run_scope(
             move || {
                 let effect_count = Arc::new(AtomicUsize::new(0));
@@ -1179,7 +1238,31 @@ mod tests {
     }
 
     #[test]
+    fn signal_handles_are_copy_even_for_non_copy_values() {
+        let _guard = TEST_MUTEX.lock();
+        reset_runtime_state();
+
+        run_scope(
+            || {
+                let signal = create_signal(String::from("hello"));
+                let copied = signal;
+                let copied_again = signal;
+
+                assert_eq!(copied.get(), "hello");
+                assert_eq!(copied_again.get(), "hello");
+                assert_eq!(signal.get(), "hello");
+
+                Node::Empty
+            },
+            |_| {},
+        );
+    }
+
+    #[test]
     fn test_multiple_signals_and_dependencies() {
+        let _guard = TEST_MUTEX.lock();
+        reset_runtime_state();
+
         run_scope(
             || {
                 let signal1 = create_signal("hello");
@@ -1199,6 +1282,55 @@ mod tests {
                 Node::Empty
             },
             |_| {},
+        );
+    }
+
+    #[test]
+    fn stale_effects_are_removed_after_rerender() {
+        let _guard = TEST_MUTEX.lock();
+        reset_runtime_state();
+
+        let handles = Arc::new(spin::Mutex::new(None));
+        let had_effect = Arc::new(AtomicUsize::new(0));
+
+        run_scope(
+            {
+                let handles = handles.clone();
+                let had_effect = had_effect.clone();
+
+                move || {
+                    let enabled = create_signal(true);
+                    let trigger = create_signal(0);
+
+                    *handles.lock() = Some((enabled, trigger));
+
+                    if enabled.get() {
+                        create_effect(move || {
+                            let _ = trigger.get();
+                        });
+
+                        had_effect.store(1, Ordering::SeqCst);
+                    }
+
+                    Node::Empty
+                }
+            },
+            |_| {},
+        );
+
+        let (enabled, _) = handles.lock().as_ref().copied().unwrap();
+        let scope_id = enabled.id.0;
+
+        assert_eq!(had_effect.load(Ordering::SeqCst), 1);
+
+        enabled.set(false);
+        render_scope(scope_id);
+
+        assert!(
+            !SCOPE_EFFECTS
+                .lock()
+                .keys()
+                .any(|(effect_scope_id, _)| *effect_scope_id == scope_id)
         );
     }
 }
