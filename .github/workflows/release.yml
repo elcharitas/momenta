@@ -1,0 +1,241 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Exact version to release (e.g. 1.2.3). If set, bump is ignored."
+        required: false
+        type: string
+      bump:
+        description: "Semver bump to apply when version is not provided."
+        required: false
+        default: "patch"
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+      release_title:
+        description: "Optional custom release title suffix. Defaults to 'Release v{version}'."
+        required: false
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Configure git identity
+        run: |
+          git config user.name "${{ github.actor }}"
+          git config user.email "${{ github.actor }}@users.noreply.github.com"
+
+      - name: Confirm workflow is running from main
+        run: |
+          if [ "${GITHUB_REF}" != "refs/heads/main" ]; then
+            echo "::error::This workflow can only run from main."
+            exit 1
+          fi
+
+      - name: Determine current version
+        id: current
+        run: |
+          VERSION=$(python3 - <<'PY'
+          import pathlib
+          import re
+
+          text = pathlib.Path('momenta/Cargo.toml').read_text()
+          match = re.search(r'^version\s*=\s*"([^"]+)"', text, re.MULTILINE)
+          if not match:
+              raise SystemExit('Unable to determine current version from momenta/Cargo.toml')
+          print(match.group(1))
+          PY
+          )
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Determine target version
+        id: bump
+        env:
+          CURRENT_VERSION: ${{ steps.current.outputs.version }}
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_BUMP: ${{ inputs.bump }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import re
+
+          current = os.environ['CURRENT_VERSION'].strip()
+          requested = os.environ.get('INPUT_VERSION', '').strip()
+          bump = os.environ.get('INPUT_BUMP', 'patch').strip()
+          semver = re.compile(r'^\d+\.\d+\.\d+$')
+
+          if requested:
+              if not semver.fullmatch(requested):
+                  raise SystemExit('::error::The provided version must match x.y.z')
+              target = requested
+          else:
+              if not semver.fullmatch(current):
+                  raise SystemExit(f'::error::Current version is not valid semver: {current}')
+              major, minor, patch = map(int, current.split('.'))
+              if bump == 'major':
+                  major += 1
+                  minor = 0
+                  patch = 0
+              elif bump == 'minor':
+                  minor += 1
+                  patch = 0
+              else:
+                  patch += 1
+              target = f'{major}.{minor}.{patch}'
+
+          if target == current:
+              raise SystemExit('::error::Target version matches the current version.')
+
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+              output.write(f'version={target}\n')
+          PY
+
+      - name: Ensure tag does not already exist
+        env:
+          TARGET_VERSION: ${{ steps.bump.outputs.version }}
+        run: |
+          if git rev-parse "v${TARGET_VERSION}" >/dev/null 2>&1; then
+            echo "::error::Tag v${TARGET_VERSION} already exists."
+            exit 1
+          fi
+
+      - name: Update crate versions
+        env:
+          TARGET_VERSION: ${{ steps.bump.outputs.version }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import pathlib
+          import re
+
+          target_version = os.environ['TARGET_VERSION']
+          manifests = {
+            pathlib.Path('momenta-macros/Cargo.toml'): [],
+            pathlib.Path('momenta-core/Cargo.toml'): ['momenta-macros'],
+            pathlib.Path('momenta-dom/Cargo.toml'): ['momenta-core', 'momenta-macros'],
+            pathlib.Path('momenta/Cargo.toml'): ['momenta-macros', 'momenta-core', 'momenta-dom'],
+            pathlib.Path('momenta-router/Cargo.toml'): ['momenta'],
+          }
+
+          package_version = re.compile(r'(?m)^(version\s*=\s*")([^"]+)(")')
+
+          for manifest, internal_dependencies in manifests.items():
+              text = manifest.read_text()
+              updated, replacements = package_version.subn(rf'\g<1>{target_version}\g<3>', text, count=1)
+              if replacements != 1:
+                  raise SystemExit(f'Unable to update package version in {manifest}')
+
+              for crate in internal_dependencies:
+                pattern = re.compile(rf'({re.escape(crate)}\s*=\s*\{{[^}}]*\bversion\s*=\s*")([^"]+)(")')
+                updated = pattern.sub(rf'\g<1>{target_version}\g<3>', updated)
+
+              manifest.write_text(updated)
+          PY
+
+      - name: Validate workspace metadata
+        run: cargo metadata --format-version 1 > /dev/null
+
+      - name: Run release verification tests
+        run: |
+          cargo check -p momenta-macros --lib
+          cargo test \
+            -p momenta-core \
+            -p momenta-dom \
+            -p momenta \
+            -p momenta-router
+
+      - name: Commit version bump
+        env:
+          TARGET_VERSION: ${{ steps.bump.outputs.version }}
+        run: |
+          git add \
+            momenta-macros/Cargo.toml \
+            momenta-core/Cargo.toml \
+            momenta-dom/Cargo.toml \
+            momenta/Cargo.toml \
+            momenta-router/Cargo.toml
+          git commit -m "chore(release): bump crates to v${TARGET_VERSION}"
+
+      - name: Push release commit to main
+        run: |
+          git pull --rebase origin main
+          git push origin HEAD:main
+
+      - name: Publish crates to crates.io
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          TARGET_VERSION: ${{ steps.bump.outputs.version }}
+        run: |
+          if [ -z "${CARGO_REGISTRY_TOKEN}" ]; then
+            echo "::error::CARGO_REGISTRY_TOKEN secret is required to publish crates."
+            exit 1
+          fi
+
+          publish_crate() {
+            local manifest_path="$1"
+            local crate_name="$2"
+
+            cargo publish --manifest-path "$manifest_path" --token "$CARGO_REGISTRY_TOKEN"
+
+            for attempt in 1 2 3 4 5 6 7 8; do
+              if curl --silent --show-error --fail "https://crates.io/api/v1/crates/${crate_name}/${TARGET_VERSION}" >/dev/null; then
+                return 0
+              fi
+              sleep 15
+            done
+
+            echo "::error::Timed out waiting for ${crate_name} ${TARGET_VERSION} to appear on crates.io."
+            exit 1
+          }
+
+          publish_crate "momenta-macros/Cargo.toml" "momenta-macros"
+          publish_crate "momenta-core/Cargo.toml" "momenta-core"
+          publish_crate "momenta-dom/Cargo.toml" "momenta-dom"
+          publish_crate "momenta/Cargo.toml" "momenta"
+          publish_crate "momenta-router/Cargo.toml" "momenta-router"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET_VERSION: ${{ steps.bump.outputs.version }}
+          INPUT_RELEASE_TITLE: ${{ inputs.release_title }}
+        run: |
+          TAG="v${TARGET_VERSION}"
+          if [ -n "${INPUT_RELEASE_TITLE}" ]; then
+            TITLE="${TAG} - ${INPUT_RELEASE_TITLE}"
+          else
+            TITLE="Release ${TAG}"
+          fi
+
+          gh release create "$TAG" \
+            --target main \
+            --title "$TITLE" \
+            --generate-notes
+
+      - name: Report new version
+        run: 'echo "New version: ${{ steps.bump.outputs.version }}"'
