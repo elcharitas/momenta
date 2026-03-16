@@ -3,7 +3,6 @@
 extern crate alloc;
 
 use alloc::{
-    boxed::Box,
     format,
     string::{String, ToString},
     vec::Vec,
@@ -24,7 +23,7 @@ pub enum RouterMode {
 #[derive(Clone, Copy)]
 pub struct RouterContext {
     mode: RouterMode,
-    current_path: Signal<&'static str>,
+    current_path: Signal<String>,
 }
 
 impl RouterContext {
@@ -34,38 +33,39 @@ impl RouterContext {
         Self { mode, current_path }
     }
     pub fn with_path(mode: RouterMode, path: &'static str) -> Self {
-        let current_path = create_signal(path);
+        let current_path = create_signal(Self::normalize_path(path));
         Self::setup_listener(mode, current_path);
         Self { mode, current_path }
     }
 
-    fn get_initial_path(mode: RouterMode) -> &'static str {
+    fn normalize_path(path: &str) -> String {
+        let normalized = path.trim_start_matches('#');
+
+        if normalized.is_empty() {
+            "/".to_string()
+        } else if normalized.starts_with('/') {
+            normalized.to_string()
+        } else {
+            format!("/{}", normalized)
+        }
+    }
+
+    fn get_initial_path(mode: RouterMode) -> String {
         let window = web_sys::window().unwrap();
         let location = window.location();
 
-        let path_string = match mode {
+        let raw_path = match mode {
             RouterMode::Hash => location
                 .hash()
                 .unwrap_or_default()
-                .trim_start_matches('#')
                 .to_string(),
-            RouterMode::Pathname => location
-                .pathname()
-                .unwrap_or_default()
-                .trim_start_matches('/')
-                .to_string(),
+            RouterMode::Pathname => location.pathname().unwrap_or_default().to_string(),
         };
 
-        let path = if path_string.is_empty() {
-            "/".to_string()
-        } else {
-            path_string
-        };
-
-        Box::leak(path.into_boxed_str())
+        Self::normalize_path(&raw_path)
     }
 
-    fn setup_listener(mode: RouterMode, current_path: Signal<&'static str>) {
+    fn setup_listener(mode: RouterMode, current_path: Signal<String>) {
         let window = web_sys::window().unwrap();
 
         let closure = Closure::wrap(alloc::boxed::Box::new(move |_event: Event| {
@@ -73,8 +73,13 @@ impl RouterContext {
             current_path.set(new_path);
         }) as alloc::boxed::Box<dyn FnMut(_)>);
 
+        let event_name = match mode {
+            RouterMode::Hash => "hashchange",
+            RouterMode::Pathname => "popstate",
+        };
+
         window
-            .add_event_listener_with_callback("popstate", closure.as_ref().unchecked_ref())
+            .add_event_listener_with_callback(event_name, closure.as_ref().unchecked_ref())
             .unwrap();
 
         closure.forget();
@@ -83,25 +88,50 @@ impl RouterContext {
     pub fn navigate(&self, path: &str) {
         let window = web_sys::window().unwrap();
         let history = window.history().unwrap();
+        let normalized_path = Self::normalize_path(path);
 
         match self.mode {
             RouterMode::Hash => {
-                let hash_path = format!("#{}", path);
+                let hash_path = format!("#{}", normalized_path);
                 window.location().set_hash(&hash_path).unwrap();
+                self.current_path.set(normalized_path);
             }
             RouterMode::Pathname => {
                 history
-                    .push_state_with_url(&JsValue::NULL, "", Some(path))
+                    .push_state_with_url(&JsValue::NULL, "", Some(&normalized_path))
                     .unwrap();
                 // Manually trigger path update since pushState doesn't fire popstate
-                let leaked_path = Box::leak(path.to_string().into_boxed_str());
-                self.current_path.set(leaked_path);
+                self.current_path.set(normalized_path);
             }
         }
     }
 
-    pub fn current_path(&self) -> Signal<&'static str> {
+    pub fn current_path(&self) -> Signal<String> {
         self.current_path
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::RouterContext;
+
+    #[test]
+    fn normalize_path_preserves_root() {
+        assert_eq!(RouterContext::normalize_path(""), "/");
+        assert_eq!(RouterContext::normalize_path("#"), "/");
+        assert_eq!(RouterContext::normalize_path("/"), "/");
+    }
+
+    #[test]
+    fn normalize_path_adds_missing_leading_slash() {
+        assert_eq!(RouterContext::normalize_path("about"), "/about");
+        assert_eq!(RouterContext::normalize_path("#/docs"), "/docs");
+    }
+
+    #[test]
+    fn normalize_path_keeps_existing_leading_slash() {
+        assert_eq!(RouterContext::normalize_path("/guide"), "/guide");
+        assert_eq!(RouterContext::normalize_path("#/guide"), "/guide");
     }
 }
 
