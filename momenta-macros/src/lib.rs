@@ -535,7 +535,11 @@ pub fn rsx(input: TokenStream) -> TokenStream {
 /// Represents the different types of JSX nodes
 #[derive(Debug)]
 enum RsxNode {
-    Fragment(Vec<RsxNode>),
+    Fragment {
+        children: Vec<RsxNode>,
+        open_span: Span,
+        close_span: Span,
+    },
     Component {
         name: Ident,
         props: Vec<(Option<Ident>, Option<Expr>, Span)>,
@@ -642,7 +646,19 @@ impl Parse for RsxChildren {
         let mut children = Vec::with_capacity(4);
         let mut last_end = 0;
         while !(input.is_empty() || input.peek(Token![<]) && input.peek2(Token![/])) {
-            if let Ok(child) = input.parse() {
+            let child_start = parse_range(&format!("{:?}", input.span())).map(|(start, _)| start);
+
+            if let Ok(child) = input.parse::<RsxNode>() {
+                if let Some(start) = child_start {
+                    if start.saturating_sub(last_end) == 1 && last_end > 0 {
+                        children.push(lit_text_node(" ", input.span()));
+                    }
+                }
+
+                if let Some((_, end)) = child.span_bounds() {
+                    last_end = end;
+                }
+
                 children.push(child);
                 continue;
             }
@@ -653,18 +669,13 @@ impl Parse for RsxChildren {
             let token = input.parse::<proc_macro2::TokenTree>()?;
 
             if !matches!(token, proc_macro2::TokenTree::Punct(_)) {
-                let gap_size = start - last_end;
-                if gap_size > 0 && last_end > 0 {
-                    // Add spaces to represent the gap
-                    value.push_str(&" ".repeat(gap_size));
+                if start.saturating_sub(last_end) == 1 && last_end > 0 {
+                    value.push(' ');
                 }
             }
             value.push_str(&token.to_string());
 
-            children.push(RsxNode::Text(syn::Expr::Lit(ExprLit {
-                attrs: Vec::new(),
-                lit: Lit::Str(LitStr::new(&value, token.span())),
-            })));
+            children.push(lit_text_node(&value, token.span()));
             last_end = end;
         }
 
@@ -734,15 +745,24 @@ impl Parse for RsxNode {
 
             // Fragment: <>...</>
             if input.peek(Token![>]) {
-                input.parse::<Token![>]>()?;
+                let open_close = input.parse::<Token![>]>()?;
 
                 let RsxChildren { children } = input.parse()?;
 
-                input.parse::<Token![<]>()?;
+                let close_open = input.parse::<Token![<]>()?;
                 input.parse::<Token![/]>()?;
-                input.parse::<Token![>]>()?;
+                let close_bracket = input.parse::<Token![>]>()?;
 
-                return Ok(RsxNode::Fragment(children));
+                return Ok(RsxNode::Fragment {
+                    children,
+                    open_span: open_bracket_span
+                        .join(open_close.span)
+                        .unwrap_or(open_bracket_span),
+                    close_span: close_open
+                        .span
+                        .join(close_bracket.span)
+                        .unwrap_or(close_bracket.span),
+                });
             }
 
             // Element: <tag ...>...</tag> or <tag ... />
@@ -857,6 +877,30 @@ impl Parse for RsxNode {
 }
 
 impl RsxNode {
+    fn span_bounds(&self) -> Option<(usize, usize)> {
+        match self {
+            RsxNode::Fragment {
+                open_span,
+                close_span,
+                ..
+            } => span_bounds(*open_span)
+                .zip(span_bounds(*close_span))
+                .map(|(open, close)| (open.0, close.1)),
+            RsxNode::Component {
+                open_span,
+                close_span,
+                ..
+            } => {
+                let open = span_bounds(*open_span)?;
+                let close = close_span.and_then(span_bounds).unwrap_or(open);
+                Some((open.0, close.1))
+            }
+            RsxNode::Text(expr) | RsxNode::Comment(expr) => span_bounds(expr.span()),
+            RsxNode::Block(block) => span_bounds(block.span()),
+            RsxNode::Empty => None,
+        }
+    }
+
     fn to_tokens(&self) -> TokenStream2 {
         match self {
             RsxNode::Component {
@@ -991,7 +1035,7 @@ impl RsxNode {
                     }
                 }
             }
-            RsxNode::Fragment(children) => {
+            RsxNode::Fragment { children, .. } => {
                 let children_tokens = children.iter().map(|child| child.to_tokens());
 
                 quote! {
@@ -1026,6 +1070,13 @@ impl RsxNode {
             }
         }
     }
+}
+
+fn lit_text_node(value: &str, span: Span) -> RsxNode {
+    RsxNode::Text(syn::Expr::Lit(ExprLit {
+        attrs: Vec::new(),
+        lit: Lit::Str(LitStr::new(value, span)),
+    }))
 }
 
 fn process_group(delimiter: proc_macro2::Delimiter, stream: TokenStream2) -> TokenStream2 {
@@ -1173,4 +1224,8 @@ fn parse_range(input: &str) -> Option<(usize, usize)> {
     let end = captures.get(2)?.as_str().parse::<usize>().ok()?;
 
     Some((start, end))
+}
+
+fn span_bounds(span: Span) -> Option<(usize, usize)> {
+    parse_range(&format!("{:?}", span))
 }
