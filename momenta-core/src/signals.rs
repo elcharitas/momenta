@@ -65,6 +65,8 @@ static PENDING_SCOPE_RENDERS: Mutex<BTreeSet<usize>> = Mutex::new(BTreeSet::new(
 static MEMO_CACHE: Mutex<BTreeMap<String, Box<dyn SignalValue>>> = Mutex::new(BTreeMap::new());
 /// Currently executing effects (to prevent infinite loops)
 static EXECUTING_EFFECTS: Mutex<BTreeSet<(usize, usize)>> = Mutex::new(BTreeSet::new());
+/// Serializes SSR renders so the global runtime can be safely reset per request.
+static ISOLATED_RUNTIME_LOCK: Mutex<()> = Mutex::new(());
 
 //==============================================================================
 // TRAITS
@@ -862,6 +864,18 @@ pub fn run_scope_transient(
     node
 }
 
+/// Runs a closure with a freshly reset runtime and clears all runtime state again afterwards.
+///
+/// This is intended for server-side rendering where the current runtime is backed by global
+/// state. The closure is executed under a global lock to avoid cross-request contamination.
+pub fn with_isolated_runtime<R>(f: impl FnOnce() -> R) -> R {
+    let _guard = ISOLATED_RUNTIME_LOCK.lock();
+    reset_runtime_state();
+    let result = f();
+    reset_runtime_state();
+    result
+}
+
 //==============================================================================
 // INTERNAL FUNCTIONS
 //==============================================================================
@@ -1157,6 +1171,27 @@ fn process_pending_renders() {
     }
 }
 
+fn reset_runtime_state() {
+    *CURRENT_SCOPE.lock() = None;
+    *RENDERING_SCOPE.lock() = 0;
+    *NEXT_SCOPE_ID.lock() = 1;
+    *BATCH_UPDATES.lock() = false;
+
+    SCOPE_SIGNAL_COUNTERS.lock().clear();
+    SCOPE_EFFECT_COUNTERS.lock().clear();
+    SIGNALS.lock().clear();
+    SCOPE_SIGNAL_CHANGES.lock().clear();
+    SCOPE_FUNCTIONS.lock().clear();
+    SCOPE_CALLBACKS.lock().clear();
+    SCOPE_EFFECTS.lock().clear();
+    SCOPE_EFFECT_CLEANUPS.lock().clear();
+    SCOPE_DEPENDENCIES.lock().clear();
+    SIGNAL_DEPENDENCIES.lock().clear();
+    PENDING_SCOPE_RENDERS.lock().clear();
+    MEMO_CACHE.lock().clear();
+    EXECUTING_EFFECTS.lock().clear();
+}
+
 //==============================================================================
 // RESOURCE
 //==============================================================================
@@ -1213,17 +1248,21 @@ where
 
     create_effect(move || {
         if status.get() == ResourceStatus::Idle || status.get() == ResourceStatus::Pending {
+            #[cfg(all(feature = "wasm", target_arch = "wasm32"))]
             status.set(ResourceStatus::Loading);
 
-            #[cfg(feature = "wasm")]
+            #[cfg(all(feature = "wasm", target_arch = "wasm32"))]
             let fetcher = fetcher.clone();
 
-            #[cfg(feature = "wasm")]
+            #[cfg(all(feature = "wasm", target_arch = "wasm32"))]
             wasm_bindgen_futures::spawn_local(async move {
                 let val = fetcher().await;
                 value.set(Some(val));
                 status.set(ResourceStatus::Resolved);
             });
+
+            #[cfg(not(all(feature = "wasm", target_arch = "wasm32")))]
+            let _ = &fetcher;
         }
     });
 
@@ -1241,27 +1280,6 @@ mod tests {
     use core::sync::atomic::{AtomicUsize, Ordering};
 
     static TEST_MUTEX: spin::Mutex<()> = spin::Mutex::new(());
-
-    fn reset_runtime_state() {
-        *CURRENT_SCOPE.lock() = None;
-        *RENDERING_SCOPE.lock() = 0;
-        *NEXT_SCOPE_ID.lock() = 1;
-        *BATCH_UPDATES.lock() = false;
-
-        SCOPE_SIGNAL_COUNTERS.lock().clear();
-        SCOPE_EFFECT_COUNTERS.lock().clear();
-        SIGNALS.lock().clear();
-        SCOPE_SIGNAL_CHANGES.lock().clear();
-        SCOPE_FUNCTIONS.lock().clear();
-        SCOPE_CALLBACKS.lock().clear();
-        SCOPE_EFFECTS.lock().clear();
-        SCOPE_EFFECT_CLEANUPS.lock().clear();
-        SCOPE_DEPENDENCIES.lock().clear();
-        SIGNAL_DEPENDENCIES.lock().clear();
-        PENDING_SCOPE_RENDERS.lock().clear();
-        MEMO_CACHE.lock().clear();
-        EXECUTING_EFFECTS.lock().clear();
-    }
 
     #[test]
     fn test_nested_scopes() {
@@ -1448,5 +1466,42 @@ mod tests {
         assert!(SCOPE_EFFECTS.lock().is_empty());
         assert!(SCOPE_CALLBACKS.lock().is_empty());
         assert!(SCOPE_FUNCTIONS.lock().is_empty());
+    }
+
+    #[test]
+    fn non_wasm_resources_do_not_enter_loading_state() {
+        let _guard = TEST_MUTEX.lock();
+        reset_runtime_state();
+
+        run_scope_transient(
+            || {
+                let resource = create_resource(|| async { 1_u32 });
+                assert_eq!(resource.status().get(), ResourceStatus::Idle);
+                Node::Empty
+            },
+            |_| {},
+        );
+    }
+
+    #[test]
+    fn isolated_runtime_clears_global_state() {
+        let _guard = TEST_MUTEX.lock();
+        reset_runtime_state();
+
+        let html = with_isolated_runtime(|| {
+            run_scope_transient(
+                || {
+                    let signal = create_signal(7);
+                    Node::from(signal.get())
+                },
+                |_| {},
+            )
+            .to_html()
+        });
+
+        assert_eq!(html, "7");
+        assert!(SIGNALS.lock().is_empty());
+        assert!(SCOPE_DEPENDENCIES.lock().is_empty());
+        assert!(SIGNAL_DEPENDENCIES.lock().is_empty());
     }
 }

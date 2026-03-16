@@ -101,7 +101,19 @@ mod tests {
     fn test_div_children_rsx_with_text() {
         let name = "World";
         let rsx = rsx!(<div>Hello: {name}</div>);
-        assert_eq!(rsx.to_string(), "<div>Hello:World</div>") // expressions don't preserve whitespace
+        assert_eq!(rsx.to_string(), "<div>Hello: World</div>")
+    }
+
+    #[test]
+    fn test_inline_elements_preserve_surrounding_spaces() {
+        let rsx = rsx!(
+            <li><code>axum_html</code> and <code>axum_stream</code></li>
+        );
+
+        assert_eq!(
+            rsx.to_string(),
+            "<li><code>axum_html</code> and <code>axum_stream</code></li>"
+        );
     }
 
     #[test]
@@ -136,7 +148,7 @@ mod tests {
         );
         assert_eq!(
             rsx.to_string(),
-            "<div class=\"mixed\"><h1>Count:42</h1><p>Static text</p>Fragment inside</div>"
+            "<div class=\"mixed\"><h1>Count: 42</h1><p>Static text</p>Fragment inside</div>"
         )
     }
 
