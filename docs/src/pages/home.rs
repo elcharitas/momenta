@@ -14,11 +14,11 @@ pub fn HomePage(_props: &NavigationProps) -> Node {
                     <span class="text-xs font-medium text-muted-foreground">Built for humans and AI</span>
                 </div>
                 <h1 class="text-4xl font-bold tracking-tight sm:text-5xl lg:text-6xl">
-                    "Rust UI that feels familiar" <br class="hidden sm:block" />
-                    <span class="text-primary">"from the first read"</span>
+                    "Ergonomic reactivity for Rust." <br class="hidden sm:block" />
+                    <span class="text-primary">"Readable by humans. Legible to AI."</span>
                 </h1>
                 <p class="mt-4 text-sm text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-                    "If you already know Rust and can read HTML or JSX, Momenta keeps the mental model close to what you already know: components, markup, signals, derived values, and effects."
+                    "Momenta gives humans and AI the same advantage: code that stays explicit, reviewable, and calm under change, so the path from idea to correct behavior never disappears behind framework magic."
                 </p>
                 <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
                     <a href={docs_href("/getting-started")} class="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90 transition-opacity">
