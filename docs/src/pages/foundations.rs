@@ -739,7 +739,10 @@ async fn fetch_user_data() -> String {
 
                 <Note variant="info">
                     <p>
-                        <strong>"Resource model:"</strong> " A resource tracks progress with ResourceStatus and stores the latest resolved value as Option&lt;T&gt;."
+                        <strong>"Resource model:"</strong>
+                        " A resource tracks progress with ResourceStatus and stores the latest resolved value as "
+                        <code>"Option<T>"</code>
+                        "."
                     </p>
                 </Note>
 

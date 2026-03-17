@@ -616,7 +616,10 @@ let first = items.with(|v| v.first().cloned()); // Some(Some(1))"#}
                 />
 
                 <h2 id="boolean-signals">Boolean Signal Methods</h2>
-                <p>"Signal&lt;bool&gt; has convenience methods for common operations:"</p>
+                <p>
+                    <code>"Signal<bool>"</code>
+                    " has convenience methods for common operations:"
+                </p>
                 <CodeBlock
                     language="rust"
                     filename="src/main.rs"
@@ -654,7 +657,10 @@ assert_eq!(is_logged_in.then(|| "secret area"), None);"#}
                 />
 
                 <h2 id="vec-signals">Vector Signal Methods</h2>
-                <p>"Signal&lt;Vec&lt;T&gt;&gt; provides familiar collection methods that automatically trigger updates:"</p>
+                <p>
+                    <code>"Signal<Vec<T>>"</code>
+                    " provides familiar collection methods that automatically trigger updates:"
+                </p>
                 <CodeBlock
                     language="rust"
                     filename="src/main.rs"
@@ -725,7 +731,12 @@ user.set(User {
                 />
                 <Note variant="info">
                     <p>
-                        <strong>"Built-in support:"</strong> " SignalValue is already implemented for all numeric types, bool, char, String, &'static str, Vec&lt;T&gt;, and Option&lt;T&gt;."
+                        <strong>"Built-in support:"</strong>
+                        " SignalValue is already implemented for all numeric types, bool, char, String, &'static str, "
+                        <code>"Vec<T>"</code>
+                        ", and "
+                        <code>"Option<T>"</code>
+                        "."
                     </p>
                 </Note>
 
