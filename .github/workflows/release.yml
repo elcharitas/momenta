@@ -208,7 +208,6 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
           TARGET_VERSION: ${{ steps.bump.outputs.version }}
-          INPUT_FORCE: ${{ inputs.force }}
         run: |
           if [ -z "${CARGO_REGISTRY_TOKEN}" ]; then
             echo "::error::CARGO_REGISTRY_TOKEN secret is required to publish crates."
@@ -216,34 +215,15 @@ jobs:
           fi
 
           publish_crate() {
-            local manifest_path="$1"
-            local crate_name="$2"
-
-            if [ "${INPUT_FORCE}" = "true" ] && \
-               curl --silent --show-error --fail "https://crates.io/api/v1/crates/${crate_name}/${TARGET_VERSION}" >/dev/null 2>&1; then
-              echo "::warning::${crate_name}@${TARGET_VERSION} already on crates.io — skipping (force mode)."
-              return 0
-            fi
-
-            cargo publish --manifest-path "$manifest_path" --token "$CARGO_REGISTRY_TOKEN"
-
-            for attempt in 1 2 3 4 5 6 7 8; do
-              if curl --silent --show-error --fail "https://crates.io/api/v1/crates/${crate_name}/${TARGET_VERSION}" >/dev/null; then
-                return 0
-              fi
-              sleep 15
-            done
-
-            echo "::error::Timed out waiting for ${crate_name} ${TARGET_VERSION} to appear on crates.io."
-            exit 1
+            cargo publish --manifest-path "$1"
           }
 
-          publish_crate "momenta-macros/Cargo.toml" "momenta-macros"
-          publish_crate "momenta-core/Cargo.toml" "momenta-core"
-          publish_crate "momenta-dom/Cargo.toml" "momenta-dom"
-          publish_crate "momenta/Cargo.toml" "momenta"
-          publish_crate "momenta-router/Cargo.toml" "momenta-router"
-          publish_crate "momenta-ssr/Cargo.toml" "momenta-ssr"
+          # publish_crate "momenta-macros/Cargo.toml"
+          publish_crate "momenta-core/Cargo.toml"
+          publish_crate "momenta-dom/Cargo.toml"
+          publish_crate "momenta/Cargo.toml"
+          publish_crate "momenta-router/Cargo.toml"
+          publish_crate "momenta-ssr/Cargo.toml"
 
       - name: Create GitHub release
         env:
