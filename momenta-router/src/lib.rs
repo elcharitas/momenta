@@ -13,7 +13,7 @@ use wasm_bindgen::JsCast;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 #[cfg(target_arch = "wasm32")]
-use web_sys::Event;
+use web_sys::{Event, MouseEvent};
 
 pub use matchit::Router;
 
@@ -94,6 +94,109 @@ impl RouterContext {
             .unwrap();
 
         closure.forget();
+
+        if mode == RouterMode::Pathname {
+            Self::setup_pathname_click_listener(current_path);
+        }
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn setup_pathname_click_listener(current_path: Signal<String>) {
+        let document = web_sys::window().unwrap().document().unwrap();
+
+        let closure = Closure::wrap(alloc::boxed::Box::new(move |event: Event| {
+            let Some(path) = Self::pathname_from_click_event(&event) else {
+                return;
+            };
+
+            let window = web_sys::window().unwrap();
+            let history = window.history().unwrap();
+
+            history
+                .push_state_with_url(&JsValue::NULL, "", Some(&path))
+                .unwrap();
+
+            current_path.set(path);
+        }) as alloc::boxed::Box<dyn FnMut(_)>);
+
+        document
+            .add_event_listener_with_callback("click", closure.as_ref().unchecked_ref())
+            .unwrap();
+
+        closure.forget();
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn pathname_from_click_event(event: &Event) -> Option<String> {
+        let mouse_event = event.dyn_ref::<MouseEvent>()?;
+
+        if !Self::is_unmodified_primary_click(event, mouse_event) {
+            return None;
+        }
+
+        let target = event.target()?;
+        let element = target.dyn_ref::<web_sys::Element>().cloned().or_else(|| {
+            target
+                .dyn_ref::<web_sys::Node>()
+                .and_then(|node| node.parent_element())
+        })?;
+
+        let anchor = element
+            .closest("a[href]")
+            .ok()
+            .flatten()?
+            .dyn_into::<web_sys::HtmlAnchorElement>()
+            .ok()?;
+
+        let origin = web_sys::window()?.location().origin().ok()?;
+        let path = Self::pathname_from_anchor_click(
+            &anchor.get_attribute("href").unwrap_or_default(),
+            &anchor.pathname(),
+            anchor.origin() == origin,
+            &anchor.target(),
+            anchor.has_attribute("download"),
+        )?;
+
+        event.prevent_default();
+        Some(path)
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn is_unmodified_primary_click(event: &Event, mouse_event: &MouseEvent) -> bool {
+        !event.default_prevented()
+            && mouse_event.button() == 0
+            && !mouse_event.meta_key()
+            && !mouse_event.ctrl_key()
+            && !mouse_event.shift_key()
+            && !mouse_event.alt_key()
+    }
+
+    #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+    fn pathname_from_anchor_click(
+        href_attr: &str,
+        pathname: &str,
+        same_origin: bool,
+        target: &str,
+        has_download: bool,
+    ) -> Option<String> {
+        if !same_origin || has_download {
+            return None;
+        }
+
+        if !target.is_empty() && target != "_self" {
+            return None;
+        }
+
+        if href_attr.is_empty()
+            || href_attr.starts_with('#')
+            || href_attr.starts_with('?')
+            || href_attr.contains('#')
+            || href_attr.contains('?')
+        {
+            return None;
+        }
+
+        Some(Self::normalize_path(pathname))
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -137,6 +240,7 @@ impl RouterContext {
 mod tests {
     use super::RouterContext;
     use crate::RouterMode;
+    use alloc::string::String;
     use momenta::prelude::Node;
     use momenta::signals::run_scope_transient;
 
@@ -173,6 +277,52 @@ mod tests {
                 Node::Empty
             },
             |_| {},
+        );
+    }
+
+    #[test]
+    fn pathname_click_intercepts_same_origin_internal_links() {
+        assert_eq!(
+            RouterContext::pathname_from_anchor_click("/guide", "/guide", true, "", false),
+            Some(String::from("/guide"))
+        );
+        assert_eq!(
+            RouterContext::pathname_from_anchor_click(
+                "https://example.com/docs",
+                "/docs",
+                true,
+                "_self",
+                false,
+            ),
+            Some(String::from("/docs"))
+        );
+    }
+
+    #[test]
+    fn pathname_click_ignores_special_case_links() {
+        assert_eq!(
+            RouterContext::pathname_from_anchor_click("#section", "/guide", true, "", false),
+            None
+        );
+        assert_eq!(
+            RouterContext::pathname_from_anchor_click("/guide?tab=api", "/guide", true, "", false),
+            None
+        );
+        assert_eq!(
+            RouterContext::pathname_from_anchor_click("/guide#api", "/guide", true, "", false),
+            None
+        );
+        assert_eq!(
+            RouterContext::pathname_from_anchor_click("/guide", "/guide", false, "", false),
+            None
+        );
+        assert_eq!(
+            RouterContext::pathname_from_anchor_click("/guide", "/guide", true, "_blank", false),
+            None
+        );
+        assert_eq!(
+            RouterContext::pathname_from_anchor_click("/guide", "/guide", true, "", true),
+            None
         );
     }
 }
