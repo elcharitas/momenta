@@ -20,4 +20,4 @@ regex = "1.11"
 syn = { version = "2.0", features = ["full", "extra-traits"] }
 
 [dev-dependencies]
-momenta = { path = "../momenta", version = "0.2.2" }
+momenta = { path = "../momenta", version = "0.2.3" }

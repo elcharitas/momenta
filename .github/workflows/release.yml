@@ -135,11 +135,12 @@ jobs:
 
           target_version = os.environ['TARGET_VERSION']
           manifests = {
-            pathlib.Path('momenta-macros/Cargo.toml'): [],
+            pathlib.Path('momenta-macros/Cargo.toml'): ['momenta'],
             pathlib.Path('momenta-core/Cargo.toml'): ['momenta-macros'],
             pathlib.Path('momenta-dom/Cargo.toml'): ['momenta-core', 'momenta-macros'],
             pathlib.Path('momenta/Cargo.toml'): ['momenta-macros', 'momenta-core', 'momenta-dom'],
             pathlib.Path('momenta-router/Cargo.toml'): ['momenta'],
+            pathlib.Path('momenta-ssr/Cargo.toml'): ['momenta'],
           }
 
           package_version = re.compile(r'(?m)^(version\s*=\s*")([^"]+)(")')
@@ -167,7 +168,8 @@ jobs:
             -p momenta-core \
             -p momenta-dom \
             -p momenta \
-            -p momenta-router
+            -p momenta-router \
+            -p momenta-ssr
 
       - name: Commit version bump
         env:
@@ -178,7 +180,9 @@ jobs:
             momenta-core/Cargo.toml \
             momenta-dom/Cargo.toml \
             momenta/Cargo.toml \
-            momenta-router/Cargo.toml
+            momenta-router/Cargo.toml \
+            momenta-ssr/Cargo.toml \
+            Cargo.lock
           git commit -m "chore(release): bump crates to v${TARGET_VERSION}"
 
       - name: Push release commit to main
@@ -200,7 +204,8 @@ jobs:
             local manifest_path="$1"
             local crate_name="$2"
 
-            cargo publish --manifest-path "$manifest_path" --token "$CARGO_REGISTRY_TOKEN"
+            local extra_args="${3:-}"
+            cargo publish --manifest-path "$manifest_path" --token "$CARGO_REGISTRY_TOKEN" $extra_args
 
             for attempt in 1 2 3 4 5 6 7 8; do
               if curl --silent --show-error --fail "https://crates.io/api/v1/crates/${crate_name}/${TARGET_VERSION}" >/dev/null; then
@@ -213,11 +218,16 @@ jobs:
             exit 1
           }
 
-          publish_crate "momenta-macros/Cargo.toml" "momenta-macros"
+          # momenta-macros has a dev-dependency on momenta, creating a circular
+          # dependency in publish order. Use --no-verify because momenta at the
+          # new version isn't on crates.io yet. The crate was already verified
+          # by the earlier cargo check step.
+          publish_crate "momenta-macros/Cargo.toml" "momenta-macros" "--no-verify"
           publish_crate "momenta-core/Cargo.toml" "momenta-core"
           publish_crate "momenta-dom/Cargo.toml" "momenta-dom"
           publish_crate "momenta/Cargo.toml" "momenta"
           publish_crate "momenta-router/Cargo.toml" "momenta-router"
+          publish_crate "momenta-ssr/Cargo.toml" "momenta-ssr"
 
       - name: Create GitHub release
         env:
