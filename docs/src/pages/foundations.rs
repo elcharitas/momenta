@@ -668,10 +668,10 @@ rsx! {
                 </ul>
 
                 <div class="mt-16 flex items-center justify-between border-t border-border pt-8">
-                    <a href="/when" class="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                    <a href={docs_href("/when")} class="text-sm text-muted-foreground hover:text-foreground transition-colors">
                         "← Conditional Rendering"
                     </a>
-                    <a href="/performance" class="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                    <a href={docs_href("/performance")} class="text-sm text-muted-foreground hover:text-foreground transition-colors">
                         "Performance →"
                     </a>
                 </div>

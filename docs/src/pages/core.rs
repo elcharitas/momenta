@@ -202,10 +202,10 @@ let elements = rsx! {
                 </ul>
 
                 <div class="mt-16 flex items-center justify-between border-t border-border pt-8">
-                    <a href="/philosophy" class="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                    <a href={docs_href("/philosophy")} class="text-sm text-muted-foreground hover:text-foreground transition-colors">
                         "← Philosophy"
                     </a>
-                    <a href="/signals" class="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                    <a href={docs_href("/signals")} class="text-sm text-muted-foreground hover:text-foreground transition-colors">
                         "Signals →"
                     </a>
                 </div>
@@ -411,10 +411,10 @@ create_effect(move || {
                     <li>"Group related effects together for better code organization"</li>
                 </ul>
                 <div class="mt-16 flex items-center justify-between border-t border-border pt-8">
-                    <a href="/computed-signals" class="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                    <a href={docs_href("/computed-signals")} class="text-sm text-muted-foreground hover:text-foreground transition-colors">
                         "← Computed Signals"
                     </a>
-                    <a href="/resources" class="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                    <a href={docs_href("/resources")} class="text-sm text-muted-foreground hover:text-foreground transition-colors">
                         "Resources →"
                     </a>
                 </div>
@@ -750,10 +750,10 @@ user.set(User {
                 </ul>
 
                 <div class="mt-16 flex items-center justify-between border-t border-border pt-8">
-                    <a href="/rsx" class="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                    <a href={docs_href("/rsx")} class="text-sm text-muted-foreground hover:text-foreground transition-colors">
                         "← rsx!"
                     </a>
-                    <a href="/computed-signals" class="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                    <a href={docs_href("/computed-signals")} class="text-sm text-muted-foreground hover:text-foreground transition-colors">
                         "Computed Signals →"
                     </a>
                 </div>
@@ -948,19 +948,19 @@ trunk build --release"#}
 
                 <h2 id="next-steps" class="font-bold tracking-tight">Next Steps</h2>
                 <div class="grid gap-3 sm:grid-cols-2 not-prose">
-                    <a href="/rsx" class="card-link group">
+                    <a href={docs_href("/rsx")} class="card-link group">
                         <h3 class="text-sm font-medium group-hover:text-primary transition-colors">RSX Syntax</h3>
                         <p class="text-xs text-muted-foreground mt-0.5">Learn the JSX-like template syntax.</p>
                     </a>
-                    <a href="/signals" class="card-link group">
+                    <a href={docs_href("/signals")} class="card-link group">
                         <h3 class="text-sm font-medium group-hover:text-primary transition-colors">Signals</h3>
                         <p class="text-xs text-muted-foreground mt-0.5">Understand reactive state management.</p>
                     </a>
-                    <a href="/components" class="card-link group">
+                    <a href={docs_href("/components")} class="card-link group">
                         <h3 class="text-sm font-medium group-hover:text-primary transition-colors">Components</h3>
                         <p class="text-xs text-muted-foreground mt-0.5">Build reusable UI components.</p>
                     </a>
-                    <a href="/examples" class="card-link group">
+                    <a href={docs_href("/examples")} class="card-link group">
                         <h3 class="text-sm font-medium group-hover:text-primary transition-colors">Examples</h3>
                         <p class="text-xs text-muted-foreground mt-0.5">See complete example applications.</p>
                     </a>

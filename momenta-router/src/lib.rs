@@ -27,19 +27,43 @@ pub enum RouterMode {
 pub struct RouterContext {
     #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
     mode: RouterMode,
+    base_path: &'static str,
     current_path: Signal<String>,
 }
 
 impl RouterContext {
     pub fn new(mode: RouterMode) -> Self {
-        let current_path = create_signal(Self::get_initial_path(mode));
-        Self::setup_listener(mode, current_path);
-        Self { mode, current_path }
+        Self::with_base(mode, "")
     }
+
+    pub fn with_base(mode: RouterMode, base_path: &'static str) -> Self {
+        let normalized_base = Self::normalize_base_path(base_path);
+        let current_path = create_signal(Self::get_initial_path(mode, &normalized_base));
+        Self::setup_listener(mode, current_path, normalized_base);
+        Self {
+            mode,
+            base_path: normalized_base,
+            current_path,
+        }
+    }
+
     pub fn with_path(mode: RouterMode, path: &'static str) -> Self {
+        Self::with_base_and_path(mode, "", path)
+    }
+
+    pub fn with_base_and_path(
+        mode: RouterMode,
+        base_path: &'static str,
+        path: &'static str,
+    ) -> Self {
+        let normalized_base = Self::normalize_base_path(base_path);
         let current_path = create_signal(Self::normalize_path(path));
-        Self::setup_listener(mode, current_path);
-        Self { mode, current_path }
+        Self::setup_listener(mode, current_path, normalized_base);
+        Self {
+            mode,
+            base_path: normalized_base,
+            current_path,
+        }
     }
 
     fn normalize_path(path: &str) -> String {
@@ -54,7 +78,58 @@ impl RouterContext {
         }
     }
 
-    fn get_initial_path(mode: RouterMode) -> String {
+    fn normalize_base_path(base_path: &'static str) -> &'static str {
+        let trimmed = base_path.trim();
+
+        if trimmed.is_empty() || trimmed == "/" {
+            ""
+        } else {
+            debug_assert!(
+                trimmed.starts_with('/'),
+                "RouterContext base paths must start with '/': {trimmed}"
+            );
+
+            trimmed.trim_end_matches('/')
+        }
+    }
+
+    fn strip_base_path(path: &str, base_path: &str) -> String {
+        let normalized_path = Self::normalize_path(path);
+
+        if base_path.is_empty() {
+            return normalized_path;
+        }
+
+        if normalized_path == base_path {
+            return "/".to_string();
+        }
+
+        let prefix = format!("{}/", base_path);
+        if normalized_path.starts_with(&prefix) {
+            return format!(
+                "/{}",
+                normalized_path[prefix.len()..].trim_start_matches('/')
+            );
+        }
+
+        normalized_path
+    }
+
+    fn join_base_path(base_path: &str, path: &str) -> String {
+        let normalized_path = Self::normalize_path(path);
+
+        if base_path.is_empty() {
+            return normalized_path;
+        }
+
+        if normalized_path == "/" {
+            format!("{}/", base_path)
+        } else {
+            format!("{}{}", base_path, normalized_path)
+        }
+    }
+
+    fn get_initial_path(mode: RouterMode, base_path: &str) -> String {
         #[cfg(target_arch = "wasm32")]
         {
             let window = web_sys::window().unwrap();
@@ -65,22 +140,25 @@ impl RouterContext {
                 RouterMode::Pathname => location.pathname().unwrap_or_default().to_string(),
             };
 
-            return Self::normalize_path(&raw_path);
+            return match mode {
+                RouterMode::Hash => Self::normalize_path(&raw_path),
+                RouterMode::Pathname => Self::strip_base_path(&raw_path, base_path),
+            };
         }
 
         #[cfg(not(target_arch = "wasm32"))]
         {
-            let _ = mode;
+            let _ = (mode, base_path);
             "/".to_string()
         }
     }
 
     #[cfg(target_arch = "wasm32")]
-    fn setup_listener(mode: RouterMode, current_path: Signal<String>) {
+    fn setup_listener(mode: RouterMode, current_path: Signal<String>, base_path: &'static str) {
         let window = web_sys::window().unwrap();
 
         let closure = Closure::wrap(alloc::boxed::Box::new(move |_event: Event| {
-            let new_path = Self::get_initial_path(mode);
+            let new_path = Self::get_initial_path(mode, base_path);
             current_path.set(new_path);
         }) as alloc::boxed::Box<dyn FnMut(_)>);
 
@@ -96,24 +174,25 @@ impl RouterContext {
         closure.forget();
 
         if mode == RouterMode::Pathname {
-            Self::setup_pathname_click_listener(current_path);
+            Self::setup_pathname_click_listener(current_path, base_path);
         }
     }
 
     #[cfg(target_arch = "wasm32")]
-    fn setup_pathname_click_listener(current_path: Signal<String>) {
+    fn setup_pathname_click_listener(current_path: Signal<String>, base_path: &'static str) {
         let document = web_sys::window().unwrap().document().unwrap();
 
         let closure = Closure::wrap(alloc::boxed::Box::new(move |event: Event| {
-            let Some(path) = Self::pathname_from_click_event(&event) else {
+            let Some(path) = Self::pathname_from_click_event(&event, &base_path) else {
                 return;
             };
 
             let window = web_sys::window().unwrap();
             let history = window.history().unwrap();
+            let external_path = Self::join_base_path(&base_path, &path);
 
             history
-                .push_state_with_url(&JsValue::NULL, "", Some(&path))
+                .push_state_with_url(&JsValue::NULL, "", Some(&external_path))
                 .unwrap();
 
             current_path.set(path);
@@ -127,7 +206,7 @@ impl RouterContext {
     }
 
     #[cfg(target_arch = "wasm32")]
-    fn pathname_from_click_event(event: &Event) -> Option<String> {
+    fn pathname_from_click_event(event: &Event, base_path: &str) -> Option<String> {
         let mouse_event = event.dyn_ref::<MouseEvent>()?;
 
         if !Self::is_unmodified_primary_click(event, mouse_event) {
@@ -152,6 +231,7 @@ impl RouterContext {
         let path = Self::pathname_from_anchor_click(
             &anchor.get_attribute("href").unwrap_or_default(),
             &anchor.pathname(),
+            base_path,
             anchor.origin() == origin,
             &anchor.target(),
             anchor.has_attribute("download"),
@@ -175,6 +255,7 @@ impl RouterContext {
     fn pathname_from_anchor_click(
         href_attr: &str,
         pathname: &str,
+        base_path: &str,
         same_origin: bool,
         target: &str,
         has_download: bool,
@@ -196,11 +277,11 @@ impl RouterContext {
             return None;
         }
 
-        Some(Self::normalize_path(pathname))
+        Some(Self::strip_base_path(pathname, base_path))
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn setup_listener(_mode: RouterMode, _current_path: Signal<String>) {}
+    fn setup_listener(_mode: RouterMode, _current_path: Signal<String>, _base_path: &'static str) {}
 
     pub fn navigate(&self, path: &str) {
         #[cfg(target_arch = "wasm32")]
@@ -216,8 +297,9 @@ impl RouterContext {
                     self.current_path.set(normalized_path);
                 }
                 RouterMode::Pathname => {
+                    let external_path = Self::join_base_path(&self.base_path, &normalized_path);
                     history
-                        .push_state_with_url(&JsValue::NULL, "", Some(&normalized_path))
+                        .push_state_with_url(&JsValue::NULL, "", Some(&external_path))
                         .unwrap();
                     self.current_path.set(normalized_path);
                 }
@@ -233,6 +315,15 @@ impl RouterContext {
 
     pub fn current_path(&self) -> Signal<String> {
         self.current_path
+    }
+
+    pub fn href(&self, path: &str) -> String {
+        let normalized_path = Self::normalize_path(path);
+
+        match self.mode {
+            RouterMode::Hash => format!("#{}", normalized_path),
+            RouterMode::Pathname => Self::join_base_path(&self.base_path, &normalized_path),
+        }
     }
 }
 
@@ -281,47 +372,104 @@ mod tests {
     }
 
     #[test]
+    fn base_path_is_stripped_from_initial_paths() {
+        assert_eq!(RouterContext::strip_base_path("/momenta", "/momenta"), "/");
+        assert_eq!(RouterContext::strip_base_path("/momenta/", "/momenta"), "/");
+        assert_eq!(
+            RouterContext::strip_base_path("/momenta/getting-started", "/momenta"),
+            "/getting-started"
+        );
+    }
+
+    #[test]
+    fn base_path_is_joined_for_external_urls() {
+        assert_eq!(RouterContext::join_base_path("", "/signals"), "/signals");
+        assert_eq!(RouterContext::join_base_path("/momenta", "/"), "/momenta/");
+        assert_eq!(
+            RouterContext::join_base_path("/momenta", "/signals"),
+            "/momenta/signals"
+        );
+    }
+
+    #[test]
+    fn href_uses_base_path_for_pathname_mode() {
+        run_scope_transient(
+            || {
+                let router =
+                    RouterContext::with_base_and_path(RouterMode::Pathname, "/momenta", "/");
+
+                assert_eq!(router.href("/"), "/momenta/");
+                assert_eq!(router.href("/examples"), "/momenta/examples");
+
+                Node::Empty
+            },
+            |_| {},
+        );
+    }
+
+    #[test]
     fn pathname_click_intercepts_same_origin_internal_links() {
         assert_eq!(
-            RouterContext::pathname_from_anchor_click("/guide", "/guide", true, "", false),
+            RouterContext::pathname_from_anchor_click("/guide", "/guide", "", true, "", false),
             Some(String::from("/guide"))
         );
         assert_eq!(
             RouterContext::pathname_from_anchor_click(
                 "https://example.com/docs",
                 "/docs",
+                "",
                 true,
                 "_self",
                 false,
             ),
             Some(String::from("/docs"))
         );
+        assert_eq!(
+            RouterContext::pathname_from_anchor_click(
+                "/momenta/guide",
+                "/momenta/guide",
+                "/momenta",
+                true,
+                "",
+                false,
+            ),
+            Some(String::from("/guide"))
+        );
     }
 
     #[test]
     fn pathname_click_ignores_special_case_links() {
         assert_eq!(
-            RouterContext::pathname_from_anchor_click("#section", "/guide", true, "", false),
+            RouterContext::pathname_from_anchor_click("#section", "/guide", "", true, "", false),
             None
         );
         assert_eq!(
-            RouterContext::pathname_from_anchor_click("/guide?tab=api", "/guide", true, "", false),
+            RouterContext::pathname_from_anchor_click(
+                "/guide?tab=api",
+                "/guide",
+                "",
+                true,
+                "",
+                false
+            ),
             None
         );
         assert_eq!(
-            RouterContext::pathname_from_anchor_click("/guide#api", "/guide", true, "", false),
+            RouterContext::pathname_from_anchor_click("/guide#api", "/guide", "", true, "", false),
             None
         );
         assert_eq!(
-            RouterContext::pathname_from_anchor_click("/guide", "/guide", false, "", false),
+            RouterContext::pathname_from_anchor_click("/guide", "/guide", "", false, "", false),
             None
         );
         assert_eq!(
-            RouterContext::pathname_from_anchor_click("/guide", "/guide", true, "_blank", false),
+            RouterContext::pathname_from_anchor_click(
+                "/guide", "/guide", "", true, "_blank", false
+            ),
             None
         );
         assert_eq!(
-            RouterContext::pathname_from_anchor_click("/guide", "/guide", true, "", true),
+            RouterContext::pathname_from_anchor_click("/guide", "/guide", "", true, "", true),
             None
         );
     }

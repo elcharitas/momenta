@@ -220,10 +220,10 @@ impl RouteMatch {
                 </ul>
 
                 <div class="mt-16 flex items-center justify-between border-t border-border pt-8">
-                    <a href="/deployment" class="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                    <a href={docs_href("/deployment")} class="text-sm text-muted-foreground hover:text-foreground transition-colors">
                         "← Deployment"
                     </a>
-                    <a href="/examples" class="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                    <a href={docs_href("/examples")} class="text-sm text-muted-foreground hover:text-foreground transition-colors">
                         "Examples →"
                     </a>
                 </div>
@@ -245,7 +245,7 @@ pub fn ExamplesPage() -> Node {
             </header>
 
             <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                <a href="/examples/counter" class="card-link group">
+                <a href={docs_href("/examples/counter")} class="card-link group">
                     <div class="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-blue-500/10 text-blue-500">
                         <i class="fas fa-plus-minus text-lg"></i>
                     </div>
@@ -255,7 +255,7 @@ pub fn ExamplesPage() -> Node {
                     </p>
                 </a>
 
-                <a href="/examples/todomvc" class="card-link group">
+                <a href={docs_href("/examples/todomvc")} class="card-link group">
                     <div class="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-green-500/10 text-green-500">
                         <i class="fas fa-check-square text-lg"></i>
                     </div>
@@ -265,7 +265,7 @@ pub fn ExamplesPage() -> Node {
                     </p>
                 </a>
 
-                <a href="/examples/hackernews" class="card-link group">
+                <a href={docs_href("/examples/hackernews")} class="card-link group">
                     <div class="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-orange-500/10 text-orange-500">
                         <i class="fab fa-hacker-news text-lg"></i>
                     </div>
@@ -275,7 +275,7 @@ pub fn ExamplesPage() -> Node {
                     </p>
                 </a>
 
-                <a href="/examples/realworld" class="card-link group">
+                <a href={docs_href("/examples/realworld")} class="card-link group">
                     <div class="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-purple-500/10 text-purple-500">
                         <i class="fas fa-globe text-lg"></i>
                     </div>
