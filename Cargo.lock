@@ -887,7 +887,7 @@ dependencies = [
 
 [[package]]
 name = "momenta"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "momenta-core",
  "momenta-dom",
@@ -908,7 +908,7 @@ dependencies = [
 
 [[package]]
 name = "momenta-core"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "momenta-macros",
  "paste",
@@ -920,7 +920,7 @@ dependencies = [
 
 [[package]]
 name = "momenta-dom"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "momenta-core",
  "momenta-macros",
@@ -932,7 +932,7 @@ dependencies = [
 
 [[package]]
 name = "momenta-macros"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "momenta",
  "proc-macro2",
@@ -943,7 +943,7 @@ dependencies = [
 
 [[package]]
 name = "momenta-router"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "matchit",
  "momenta",
@@ -953,7 +953,7 @@ dependencies = [
 
 [[package]]
 name = "momenta-ssr"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "actix-web",
  "axum",
