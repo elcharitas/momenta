@@ -294,16 +294,16 @@ impl<T: ToString> OptionAttribute for Option<T> {
 /// );
 /// ```
 pub struct Element {
-    pub(crate) key: String,
-    tag: Cow<'static, str>,
-    attributes: BTreeMap<String, String>,
-    inner_html: String,
-    children: Vec<Node>,
+    pub key: String,
+    pub tag: Cow<'static, str>,
+    pub attributes: BTreeMap<String, String>,
+    pub inner_html: String,
+    pub children: Vec<Node>,
     #[cfg(feature = "wasm")]
-    events: BTreeMap<String, EventCallback>,
+    pub events: BTreeMap<String, EventCallback>,
     #[cfg(not(feature = "wasm"))]
     #[allow(unused)]
-    events: BTreeMap<String, String>,
+    pub events: BTreeMap<String, String>,
 }
 
 impl Element {

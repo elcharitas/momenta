@@ -175,7 +175,7 @@ pub use momenta_dom as dom;
 pub use paste::paste;
 
 pub mod prelude {
-    pub use momenta_core::nodes::{Component, Node, classes};
+    pub use momenta_core::nodes::{Component, Element, Node, classes};
     #[cfg(any(feature = "computed", feature = "full-reactivity"))]
     pub use momenta_core::signals::create_computed;
     #[cfg(any(feature = "memoization", feature = "full-reactivity"))]
