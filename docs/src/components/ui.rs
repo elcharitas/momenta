@@ -1,4 +1,4 @@
-use crate::CounterExample;
+use crate::pages::CounterExample;
 use alloc::{format, vec, vec::Vec};
 use momenta::prelude::*;
 
