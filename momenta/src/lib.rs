@@ -169,6 +169,7 @@ extern crate alloc;
 pub use momenta_core::{nodes, signals};
 
 // Re-export DOM functionality when available
+#[cfg(feature = "dom")]
 pub use momenta_dom as dom;
 
 pub use paste::paste;
@@ -183,6 +184,9 @@ pub mod prelude {
         Signal, SignalValue, batch, create_effect, create_effect_with_cleanup, create_signal,
     };
     #[cfg(feature = "wasm")]
-    pub use momenta_dom::{component, mount_to_body, render_root};
+    pub use momenta_dom::{
+        component, hydrate_root, mount_to_body, read_default_hydration_data, read_hydration_data,
+        render_root,
+    };
     pub use momenta_macros::{SignalValue, component, rsx, when};
 }

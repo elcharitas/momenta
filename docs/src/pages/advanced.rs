@@ -430,7 +430,7 @@ panic = "abort"   # Smaller binary size"#}
                     filename="Cargo.toml"
                     highlight=""
                     code={r#"[dependencies.momenta]
-version = \"0.2\"
+version = "0.2"
 default-features = false
 features = [\"web\", \"signals\"]  # Only include what you need"#}
                 />
@@ -471,6 +471,203 @@ create_effect(move || {
                 <div class="mt-16 flex items-center justify-between border-t border-border pt-8">
                     <a href="/lists" class="text-sm text-muted-foreground hover:text-foreground transition-colors">
                         "← List Rendering"
+                    </a>
+                    <a href="/ssr" class="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                        "SSR & Hydration →"
+                    </a>
+                </div>
+            </section>
+        </article>
+    }
+}
+
+#[component]
+pub fn SsrPage() -> Node {
+    rsx! {
+        <article class="px-6 py-10 sm:px-8 lg:px-10 xl:pr-8 2xl:pr-10 fade-in">
+            <DocPageHeader
+                title="SSR and Hydration"
+                summary="Server rendering in Momenta stays intentionally small: render HTML on the server, stream when transport benefits from chunks, and hydrate only when the browser needs to resume from server markup."
+                chips={vec!["momenta-ssr", "streaming", "hydration"]}
+                stats={vec![
+                    ("Buffered output", "render_to_string for complete HTML responses"),
+                    ("Streamed output", "render_to_chunks for chunked transports"),
+                    ("Resume support", "render_to_hydration_string plus hydrate_root on the client"),
+                ]}
+            />
+
+            <section class="prose prose-neutral dark:prose-invert max-w-none prose-headings:tracking-tight prose-p:leading-relaxed prose-a:text-primary prose-a:no-underline hover:prose-a:underline">
+                <h2 id="overview">Overview</h2>
+                <p>
+                    Momenta keeps SSR in the <code>momenta-ssr</code> crate so the core UI model stays focused. The server-facing surface is just a few concepts:
+                </p>
+                <ul>
+                    <li><code>render_to_string</code> for buffered HTML</li>
+                    <li><code>render_to_chunks</code> for chunked or streamed HTML</li>
+                    <li><code>render_to_hydration_string</code> when the browser should resume from server markup</li>
+                    <li>thin response adapters for Axum, Actix, and Hyper</li>
+                </ul>
+
+                <Note variant="info">
+                    <p>
+                        <strong>Rule of thumb:</strong> use plain SSR when you only need HTML output. Add hydration only when the browser must attach event handlers and continue from the server-rendered DOM.
+                    </p>
+                </Note>
+
+                <h2 id="install-server-crate">Install the Server Crate</h2>
+                <CodeBlock
+                    language="toml"
+                    filename="Cargo.toml"
+                    highlight=""
+                    code={r#"[dependencies]
+momenta = { version = "0.2", default-features = false }
+momenta-ssr = "0.2"
+
+# Enable only the adapter you need
+momenta-ssr = { version = "0.2", features = ["axum"] }"#}
+                />
+
+                <h2 id="buffered-ssr">Buffered SSR</h2>
+                <p>
+                    This is the simplest path. Render a component or closure to a complete HTML string and return it from your server handler.
+                </p>
+                <CodeBlock
+                    language="rust"
+                    filename="src/server.rs"
+                    highlight=""
+                    code={r#"use momenta::prelude::*;
+use momenta_ssr::render_to_string;
+
+fn page() -> String {
+    render_to_string(|| {
+        rsx! {
+            <main>
+                <h1>"Hello from Momenta SSR"</h1>
+                <p>"This response was rendered on the server."</p>
+            </main>
+        }
+    })
+}"#}
+                />
+
+                <h2 id="streaming-html">Streaming HTML</h2>
+                <p>
+                    If your framework prefers a byte stream, render the same UI into chunks and hand those chunks to the transport layer.
+                </p>
+                <CodeBlock
+                    language="rust"
+                    filename="src/server.rs"
+                    highlight=""
+                    code={r#"use momenta::prelude::*;
+use momenta_ssr::{render_to_chunks, RenderOptions};
+
+fn stream_chunks() -> Vec<String> {
+    render_to_chunks(
+        || {
+            rsx! {
+                <main>
+                    <h1>"Streaming Momenta"</h1>
+                    <p>"Each chunk can be forwarded by Axum, Actix, or Hyper."</p>
+                </main>
+            }
+        },
+        RenderOptions { chunk_size: 1024 },
+    )
+}"#}
+                />
+
+                <h2 id="hydratable-ssr">Hydratable SSR</h2>
+                <p>
+                    Hydration adds stable <code>data-momenta-*</code> markers to the HTML and can embed request-scoped JSON for the client to read during startup.
+                </p>
+                <CodeBlock
+                    language="rust"
+                    filename="src/server.rs"
+                    highlight=""
+                    code={r##"use momenta::prelude::*;
+use momenta_ssr::{render_to_hydration_string, HydrationOptions};
+
+fn hydratable_page() -> String {
+    render_to_hydration_string(
+        || {
+            rsx! {
+                <div id="app-shell">
+                    <h1>"Hello"</h1>
+                    <p>"Rendered on the server, resumed in the browser."</p>
+                </div>
+            }
+        },
+        HydrationOptions {
+            state_json: Some(r#"{"user":"jon","theme":"light"}"#.into()),
+            ..HydrationOptions::default()
+        },
+    )
+}"##}
+                />
+
+                <h2 id="client-resume-example">Client Resume Example</h2>
+                <p>
+                    On the client, call <code>hydrate_root</code> instead of <code>render_root</code>. This reuses the server DOM instead of replacing it.
+                </p>
+                <CodeBlock
+                    language="rust"
+                    filename="src/main.rs"
+                    highlight=""
+                    code={r##"use momenta::prelude::*;
+
+#[component]
+fn App() -> Node {
+    rsx! {
+        <div id="app-shell">
+            <h1>"Hello"</h1>
+            <p>"Rendered on the server, resumed in the browser."</p>
+        </div>
+    }
+}
+
+fn main() {
+    let request_data = read_default_hydration_data();
+    let _ = request_data;
+
+    hydrate_root::<App>("#app");
+}"##}
+                />
+
+                <h2 id="framework-adapters">Framework Adapters</h2>
+                <p>
+                    The adapter helpers stay thin so each framework keeps its own response types:
+                </p>
+                <ul>
+                    <li><code>axum_html</code> and <code>axum_stream</code></li>
+                    <li><code>actix_html</code> and <code>actix_stream</code></li>
+                    <li><code>hyper_html</code> and <code>hyper_stream</code></li>
+                </ul>
+                <CodeBlock
+                    language="rust"
+                    filename="src/axum.rs"
+                    highlight=""
+                    code={r#"use axum::{routing::get, Router};
+use momenta::prelude::*;
+use momenta_ssr::axum_html;
+
+async fn home() -> axum::response::Html<String> {
+    axum_html(|| rsx!(<main><h1>"Hello from Axum"</h1></main>))
+}
+
+fn app() -> Router {
+    Router::new().route("/", get(home))
+}"#}
+                />
+
+                <Note variant="tip">
+                    <p>
+                        <strong>Use the smallest mode that fits:</strong> buffered HTML is simplest to reason about, chunked rendering helps transport large responses, and hydration should be added only when the client must continue from server-rendered markup.
+                    </p>
+                </Note>
+
+                <div class="mt-16 flex items-center justify-between border-t border-border pt-8">
+                    <a href="/performance" class="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                        "← Performance"
                     </a>
                     <a href="/deployment" class="text-sm text-muted-foreground hover:text-foreground transition-colors">
                         "Deployment →"

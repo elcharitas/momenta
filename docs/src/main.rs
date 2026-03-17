@@ -1,8 +1,9 @@
 #![no_std]
 
 extern crate alloc;
-mod pages;
+
 mod components;
+mod pages;
 
 use alloc::vec;
 use components::*;
@@ -10,18 +11,17 @@ use momenta::prelude::*;
 use momenta_router::{RouterContext, RouterMode, routes};
 use pages::*;
 
-// Main App
 #[component]
 fn App() -> Node {
     let router = RouterContext::new(RouterMode::Pathname);
     let current_path = router.current_path();
     let theme = create_signal("dark");
     let mobile_menu_open = create_signal(false);
+
     create_effect(|| {
         highlightAll();
     });
 
-    // Detect initial theme from localStorage
     create_effect(move || {
         if let Some(window) = web_sys::window() {
             if let Ok(Some(storage)) = window.local_storage() {
@@ -44,15 +44,14 @@ fn App() -> Node {
             <Header {theme} {mobile_menu_open} />
 
             <div class="flex pt-14">
-                // Sidebar Navigation
-                {when!(current_path.get() != "/" => <aside class="hidden lg:block w-64 shrink-0 border-r border-border/50">
+                {when!(current_path.get() != "/" =>
+                    <aside class="hidden lg:block w-64 shrink-0 border-r border-border/50">
                         <div class="sticky top-14 h-[calc(100vh-3.5rem)] overflow-y-auto py-6 px-1">
                             <Navigation {router} />
                         </div>
                     </aside>
                 )}
 
-                // Mobile Navigation
                 {when!(mobile_menu_open =>
                     <div class="lg:hidden fixed inset-0 z-50 flex">
                         <div class="fixed inset-0 bg-black/40 backdrop-blur-sm" on:click={move |_| mobile_menu_open.set(false)}></div>
@@ -70,7 +69,6 @@ fn App() -> Node {
                     </div>
                 )}
 
-                // Main Content
                 <main class="flex-1 min-w-0">
                     {when!(current_path.get() != "/" && !docs_on_this_page_sections(&current_path.get()).is_empty() =>
                         <div class="xl:hidden px-6 pt-5 sm:px-8 lg:px-10">
@@ -92,6 +90,7 @@ fn App() -> Node {
                         "/when" => |_| rsx! { <ShowPage /> },
                         "/lists" => |_| rsx! { <ForPage /> },
                         "/performance" => |_| rsx! { <PerformancePage /> },
+                        "/ssr" => |_| rsx! { <SsrPage /> },
                         "/deployment" => |_| rsx! { <DeploymentPage /> },
                         "/examples" => |_| rsx! { <ExamplesPage /> },
                         "/routing" => |_| rsx! { <RoutingPage /> },
@@ -114,8 +113,6 @@ fn App() -> Node {
         </div>
     }
 }
-
-// Page Components
 
 fn main() {
     render_root::<App>("#app");

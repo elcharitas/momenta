@@ -40,7 +40,7 @@ Small runtime with minimal overhead. Your apps stay fast and bundle sizes stay s
 Inspired by React with a Rust-first approach to reactive programming.
 
 ### SSR Ready
-Server-side rendering support out of the box with a simple API for better performance and SEO.
+Buffered and chunked server-side rendering are available through the `momenta-ssr` crate, with adapters for Axum, Actix, and Hyper.
 
 ### Composable Primitives
 Build complex UIs from simple, reusable reactive primitives:
@@ -182,10 +182,82 @@ Available features:
 - `memoization` - Memoization utilities
 - `full-reactivity` - All reactive features (includes computed + memoization, default)
 
-For server-side rendering without DOM, use only `momenta-core`:
+For server-side rendering without DOM, use `momenta-ssr`:
 ```toml
 [dependencies]
-momenta-core = "0.2"
+momenta-ssr = "0.2"
+```
+
+Basic SSR usage:
+
+```rust
+use momenta::prelude::*;
+use momenta_ssr::render_to_string;
+
+let html = render_to_string(|| {
+    rsx!(<div><h1>"Hello from Momenta SSR"</h1></div>)
+});
+```
+
+### SSR and Hydration
+
+Momenta's server API is intentionally small:
+- `render_to_string` for buffered HTML output
+- `render_to_chunks` for chunked or streamed HTML output
+- framework adapters in `momenta-ssr` for Axum, Actix, and Hyper
+- `render_to_hydration_string` when the client should resume from server markup
+
+Hydratable rendering emits stable `data-momenta-*` markers and can embed serialized request data in an inline JSON script.
+
+```rust
+use momenta::prelude::*;
+use momenta_ssr::{render_to_hydration_string, HydrationOptions};
+
+let html = render_to_hydration_string(
+    || rsx!(<div id="app-shell"><h1>"Hello"</h1></div>),
+    HydrationOptions {
+        state_json: Some(r#"{"user":"jon"}"#.into()),
+        ..HydrationOptions::default()
+    },
+);
+```
+
+On the client, hydrate the existing DOM instead of replacing it:
+
+```rust
+use momenta::prelude::*;
+
+#[component]
+fn App() -> Node {
+    rsx!(<div id="app-shell"><h1>"Hello"</h1></div>)
+}
+
+fn main() {
+    let request_data = read_default_hydration_data();
+    let _ = request_data;
+    hydrate_root::<App>("#app");
+}
+```
+
+If you do not need hydration, keep using `render_to_string` on the server and `render_root` in the browser.
+
+Streaming is just as small:
+
+```rust
+use momenta::prelude::*;
+use momenta_ssr::render_to_chunks;
+
+let chunks = render_to_chunks(
+    || rsx!(<main><h1>"Streamed"</h1></main>),
+    1024,
+);
+```
+
+For framework-specific response helpers, enable the corresponding `momenta-ssr` feature:
+
+```toml
+[dependencies]
+momenta-ssr = { version = "0.2", features = ["axum"] }
 ```
 
 ## Comparison with Other Frameworks

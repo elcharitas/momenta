@@ -10,7 +10,10 @@
 
 extern crate alloc;
 
-use alloc::{string::String, vec::Vec};
+use alloc::{
+    string::{String, ToString},
+    vec::Vec,
+};
 #[cfg(not(feature = "wasm"))]
 use momenta_core::signals::{has_current_scope, run_scope_transient};
 use momenta_core::{
@@ -18,8 +21,18 @@ use momenta_core::{
     signals::run_scope,
 };
 
+#[cfg(feature = "wasm")]
+use wasm_bindgen::JsCast;
+
 pub use momenta_core::nodes;
 pub use paste::paste;
+
+#[cfg(feature = "wasm")]
+const HYDRATION_ID_ATTR: &str = "data-momenta-hid";
+#[cfg(feature = "wasm")]
+const HYDRATION_ROOT_ATTR: &str = "data-momenta-root";
+#[cfg(feature = "wasm")]
+const DEFAULT_HYDRATION_STATE_ID: &str = "__MOMENTA_HYDRATION__";
 
 #[cfg(feature = "wasm")]
 fn append_static_html(mount: &web_sys::Element, html: &str) {
@@ -140,10 +153,12 @@ impl WasmRender for momenta_core::nodes::Element {
                 let _ = element.set_attribute("data-momenta-has-events", "1");
             }
 
-            element_cache::with_cache(|cache| {
-                use alloc::string::ToString;
-                cache.insert(self.key().to_string(), element.clone());
-            });
+            if !self.key().is_empty() {
+                element_cache::with_cache(|cache| {
+                    use alloc::string::ToString;
+                    cache.insert(self.key().to_string(), element.clone());
+                });
+            }
             return Some(element);
         }
         None
@@ -216,10 +231,12 @@ impl WasmRender for momenta_core::nodes::Element {
         }
 
         // Update cache
-        element_cache::with_cache(|cache| {
-            use alloc::string::ToString;
-            cache.insert(self.key().to_string(), old_element.clone());
-        });
+        if !self.key().is_empty() {
+            element_cache::with_cache(|cache| {
+                use alloc::string::ToString;
+                cache.insert(self.key().to_string(), old_element.clone());
+            });
+        }
 
         Some(old_element.clone())
     }
@@ -364,6 +381,41 @@ where
 }
 
 #[cfg(feature = "wasm")]
+pub fn hydrate_root<C: Component>(selectors: &'static str)
+where
+    <C as Component>::Props: Default,
+    <C as Component>::Props: Send + Sync + 'static,
+{
+    render_component::<C>(Default::default(), move |node| {
+        let window = web_sys::window().expect("no global `window` exists");
+        let document = window.document().expect("should have a document on window");
+        let mount_point = document
+            .query_selector(selectors)
+            .expect("couldn't find element")
+            .expect("couldn't find element");
+
+        if !hydrate_mount(node, &mount_point) {
+            while let Some(child) = mount_point.first_child() {
+                mount_point.remove_child(&child).ok();
+            }
+            node.render(&mount_point);
+        }
+    });
+}
+
+#[cfg(feature = "wasm")]
+pub fn read_hydration_data(script_id: &str) -> Option<String> {
+    let document = web_sys::window()?.document()?;
+    let element = document.get_element_by_id(script_id)?;
+    element.text_content()
+}
+
+#[cfg(feature = "wasm")]
+pub fn read_default_hydration_data() -> Option<String> {
+    read_hydration_data(DEFAULT_HYDRATION_STATE_ID)
+}
+
+#[cfg(feature = "wasm")]
 /// Mounts the root component to the body element
 ///
 /// # Example
@@ -413,6 +465,176 @@ fn attach_event_handler(
         .expect("Failed to add event listener");
 
     closure.forget(); // Keep the closure alive
+}
+
+#[cfg(feature = "wasm")]
+fn hydrate_mount(node: &Node, mount: &web_sys::Element) -> bool {
+    let mut expected = Vec::new();
+    collect_materialized_nodes(node, &mut expected);
+
+    if expected.is_empty() {
+        return mount.child_nodes().length() == 0;
+    }
+
+    hydrate_children(&expected, mount, None)
+}
+
+#[cfg(feature = "wasm")]
+fn hydrate_children(
+    expected: &[&Node],
+    parent: &web_sys::Element,
+    parent_path: Option<&str>,
+) -> bool {
+    let child_nodes = parent.child_nodes();
+
+    if child_nodes.length() as usize != expected.len() {
+        return false;
+    }
+
+    for (index, expected_node) in expected.iter().enumerate() {
+        let Some(existing_node) = child_nodes.item(index as u32) else {
+            return false;
+        };
+
+        let path = match parent_path {
+            Some(parent_path) => alloc::format!("{}.{}", parent_path, index),
+            None => index.to_string(),
+        };
+
+        if !hydrate_node(expected_node, &existing_node, &path, parent_path.is_none()) {
+            return false;
+        }
+    }
+
+    true
+}
+
+#[cfg(feature = "wasm")]
+fn hydrate_node(expected: &Node, existing: &web_sys::Node, path: &str, is_root: bool) -> bool {
+    match expected {
+        Node::Element(element) => {
+            let Some(existing_element) = existing.dyn_ref::<web_sys::Element>() else {
+                return false;
+            };
+
+            if existing_element.tag_name().to_lowercase() != element.tag() {
+                return false;
+            }
+
+            if existing_element.get_attribute(HYDRATION_ID_ATTR).as_deref() != Some(path) {
+                return false;
+            }
+
+            if is_root
+                && existing_element
+                    .get_attribute(HYDRATION_ROOT_ATTR)
+                    .as_deref()
+                    != Some("true")
+            {
+                return false;
+            }
+
+            sync_element_for_hydration(element, existing_element, path, is_root)
+        }
+        Node::Text(text) => {
+            existing.node_type() == web_sys::Node::TEXT_NODE
+                && existing.text_content().as_deref() == Some(text.as_str())
+        }
+        Node::Comment(comment) => {
+            existing.node_type() == web_sys::Node::COMMENT_NODE
+                && existing.text_content().as_deref() == Some(comment.as_str())
+        }
+        Node::Static(_) => false,
+        Node::Fragment(_) | Node::Empty => false,
+    }
+}
+
+#[cfg(feature = "wasm")]
+fn sync_element_for_hydration(
+    expected: &momenta_core::nodes::Element,
+    existing: &web_sys::Element,
+    path: &str,
+    is_root: bool,
+) -> bool {
+    let old_attrs = existing.attributes();
+    let old_attr_names: Vec<String> = (0..old_attrs.length())
+        .filter_map(|index| old_attrs.item(index).map(|attr| attr.name()))
+        .collect();
+
+    for attr_name in old_attr_names {
+        if attr_name == HYDRATION_ID_ATTR
+            || attr_name == HYDRATION_ROOT_ATTR
+            || attr_name == "data-momenta-has-events"
+        {
+            continue;
+        }
+
+        if !expected.attributes().contains_key(&attr_name) {
+            let _ = existing.remove_attribute(&attr_name);
+        }
+    }
+
+    let _ = existing.set_attribute(HYDRATION_ID_ATTR, path);
+    if is_root {
+        let _ = existing.set_attribute(HYDRATION_ROOT_ATTR, "true");
+    }
+
+    for (name, value) in expected.attributes() {
+        if existing.get_attribute(name).as_deref() != Some(value) {
+            let _ = existing.set_attribute(name, value);
+        }
+    }
+
+    if !expected.events().is_empty() {
+        let _ = existing.set_attribute("data-momenta-has-events", "1");
+    }
+
+    for (event_type, callback) in expected.events() {
+        attach_event_handler(existing, event_type, callback.clone());
+    }
+
+    if !expected.html().is_empty() {
+        if existing.inner_html() != *expected.html() {
+            existing.set_inner_html(expected.html());
+        }
+    } else {
+        let mut expected_children = Vec::new();
+        collect_materialized_children(expected.children(), &mut expected_children);
+        if !hydrate_children(&expected_children, existing, Some(path)) {
+            while let Some(child) = existing.first_child() {
+                existing.remove_child(&child).ok();
+            }
+
+            for child in expected.children() {
+                child.render(existing);
+            }
+        }
+    }
+
+    if !expected.key().is_empty() {
+        element_cache::with_cache(|cache| {
+            use alloc::string::ToString;
+            cache.insert(expected.key().to_string(), existing.clone());
+        });
+    }
+
+    true
+}
+
+#[cfg(feature = "wasm")]
+fn collect_materialized_children<'a>(children: &'a [Node], out: &mut Vec<&'a Node>) {
+    for child in children {
+        collect_materialized_nodes(child, out);
+    }
+}
+
+#[cfg(feature = "wasm")]
+fn collect_materialized_nodes<'a>(node: &'a Node, out: &mut Vec<&'a Node>) {
+    match node {
+        Node::Fragment(children) => collect_materialized_children(children, out),
+        Node::Empty => {}
+        _ => out.push(node),
+    }
 }
 
 fn render_component<C: Component>(

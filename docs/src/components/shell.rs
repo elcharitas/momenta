@@ -300,6 +300,7 @@ pub fn Navigation(props: &NavigationProps) -> Node {
             {section("Guides", vec![
                 nav_link("/routing", "Routing"),
                 nav_link("/performance", "Performance"),
+                nav_link("/ssr", "SSR & Hydration"),
                 nav_link("/deployment", "Deployment"),
             ])}
 
@@ -434,6 +435,15 @@ pub fn docs_on_this_page_sections(path: &str) -> Vec<(&'static str, &'static str
             ("bundle-size-optimization", "Bundle Size"),
             ("best-practices", "Best Practices"),
             ("performance-monitoring", "Performance Monitoring"),
+        ],
+        "/ssr" => vec![
+            ("overview", "Overview"),
+            ("install-server-crate", "Install the Server Crate"),
+            ("buffered-ssr", "Buffered SSR"),
+            ("streaming-html", "Streaming HTML"),
+            ("hydratable-ssr", "Hydratable SSR"),
+            ("client-resume-example", "Client Resume Example"),
+            ("framework-adapters", "Framework Adapters"),
         ],
         "/deployment" => vec![
             ("build-for-production", "Build for Production"),
