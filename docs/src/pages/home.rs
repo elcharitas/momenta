@@ -21,7 +21,7 @@ pub fn HomePage(_props: &NavigationProps) -> Node {
                     "If you already know Rust and can read HTML or JSX, Momenta keeps the mental model close to what you already know: components, markup, signals, derived values, and effects."
                 </p>
                 <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
-                    <a href="/getting-started" class="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90 transition-opacity">
+                    <a href={docs_href("/getting-started")} class="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90 transition-opacity">
                         "Read the Docs"
                         <i class="fas fa-arrow-right text-xs"></i>
                     </a>
@@ -119,7 +119,7 @@ pub fn HomePage(_props: &NavigationProps) -> Node {
             <div class="mx-auto max-w-6xl px-6 sm:px-8 pb-16">
                 <h2 class="text-lg font-semibold mb-4">Explore</h2>
                 <div class="grid gap-3 sm:grid-cols-2">
-                    <a href="/getting-started" class="card-link group">
+                    <a href={docs_href("/getting-started")} class="card-link group">
                         <div class="flex items-start gap-3">
                             <div class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
                                 <i class="fas fa-rocket text-sm"></i>
@@ -130,7 +130,7 @@ pub fn HomePage(_props: &NavigationProps) -> Node {
                             </div>
                         </div>
                     </a>
-                    <a href="/signals" class="card-link group">
+                    <a href={docs_href("/signals")} class="card-link group">
                         <div class="flex items-start gap-3">
                             <div class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
                                 <i class="fas fa-wave-square text-sm"></i>
@@ -141,7 +141,7 @@ pub fn HomePage(_props: &NavigationProps) -> Node {
                             </div>
                         </div>
                     </a>
-                    <a href="/components" class="card-link group">
+                    <a href={docs_href("/components")} class="card-link group">
                         <div class="flex items-start gap-3">
                             <div class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
                                 <i class="fas fa-cubes text-sm"></i>
@@ -152,7 +152,7 @@ pub fn HomePage(_props: &NavigationProps) -> Node {
                             </div>
                         </div>
                     </a>
-                    <a href="/examples" class="card-link group">
+                    <a href={docs_href("/examples")} class="card-link group">
                         <div class="flex items-start gap-3">
                             <div class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
                                 <i class="fas fa-play text-sm"></i>
@@ -259,19 +259,19 @@ pub fn CounterExample() -> Node {
                         <div>
                             <h4 class="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Documentation</h4>
                             <div class="space-y-2">
-                                <a href="/getting-started" class="block text-sm text-muted-foreground hover:text-foreground transition-colors">Getting Started</a>
-                                <a href="/signals" class="block text-sm text-muted-foreground hover:text-foreground transition-colors">Signals</a>
-                                <a href="/components" class="block text-sm text-muted-foreground hover:text-foreground transition-colors">Components</a>
-                                <a href="/rsx" class="block text-sm text-muted-foreground hover:text-foreground transition-colors">RSX Syntax</a>
+                                <a href={docs_href("/getting-started")} class="block text-sm text-muted-foreground hover:text-foreground transition-colors">Getting Started</a>
+                                <a href={docs_href("/signals")} class="block text-sm text-muted-foreground hover:text-foreground transition-colors">Signals</a>
+                                <a href={docs_href("/components")} class="block text-sm text-muted-foreground hover:text-foreground transition-colors">Components</a>
+                                <a href={docs_href("/rsx")} class="block text-sm text-muted-foreground hover:text-foreground transition-colors">RSX Syntax</a>
                             </div>
                         </div>
                         <div>
                             <h4 class="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Examples</h4>
                             <div class="space-y-2">
-                                <a href="/examples/counter" class="block text-sm text-muted-foreground hover:text-foreground transition-colors">Counter</a>
-                                <a href="/examples/todomvc" class="block text-sm text-muted-foreground hover:text-foreground transition-colors">TodoMVC</a>
-                                <a href="/examples/hackernews" class="block text-sm text-muted-foreground hover:text-foreground transition-colors">Hacker News</a>
-                                <a href="/examples/realworld" class="block text-sm text-muted-foreground hover:text-foreground transition-colors">RealWorld</a>
+                                <a href={docs_href("/examples/counter")} class="block text-sm text-muted-foreground hover:text-foreground transition-colors">Counter</a>
+                                <a href={docs_href("/examples/todomvc")} class="block text-sm text-muted-foreground hover:text-foreground transition-colors">TodoMVC</a>
+                                <a href={docs_href("/examples/hackernews")} class="block text-sm text-muted-foreground hover:text-foreground transition-colors">Hacker News</a>
+                                <a href={docs_href("/examples/realworld")} class="block text-sm text-muted-foreground hover:text-foreground transition-colors">RealWorld</a>
                             </div>
                         </div>
                         <div>

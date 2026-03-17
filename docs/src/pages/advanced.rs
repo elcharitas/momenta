@@ -469,10 +469,10 @@ create_effect(move || {
                 />
 
                 <div class="mt-16 flex items-center justify-between border-t border-border pt-8">
-                    <a href="/lists" class="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                    <a href={docs_href("/lists")} class="text-sm text-muted-foreground hover:text-foreground transition-colors">
                         "← List Rendering"
                     </a>
-                    <a href="/ssr" class="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                    <a href={docs_href("/ssr")} class="text-sm text-muted-foreground hover:text-foreground transition-colors">
                         "SSR & Hydration →"
                     </a>
                 </div>
@@ -666,10 +666,10 @@ fn app() -> Router {
                 </Note>
 
                 <div class="mt-16 flex items-center justify-between border-t border-border pt-8">
-                    <a href="/performance" class="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                    <a href={docs_href("/performance")} class="text-sm text-muted-foreground hover:text-foreground transition-colors">
                         "← Performance"
                     </a>
-                    <a href="/deployment" class="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                    <a href={docs_href("/deployment")} class="text-sm text-muted-foreground hover:text-foreground transition-colors">
                         "Deployment →"
                     </a>
                 </div>

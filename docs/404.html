@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Momenta Docs Redirect</title>
+		<script>
+			( function () {
+				var pathSegments = window.location.pathname.split( '/' ).filter( Boolean );
+				var basePath = pathSegments.length > 0 ? '/' + pathSegments[ 0 ] : '';
+				var routePath = window.location.pathname.slice( basePath.length ) || '/';
+				var query = window.location.search || '';
+				var hash = window.location.hash ? window.location.hash.slice( 1 ) : '';
+
+				var redirectUrl =
+					window.location.origin +
+					basePath +
+					'/?p=' + encodeURIComponent( routePath + query );
+
+				if ( hash ) {
+					redirectUrl += '&h=' + encodeURIComponent( hash );
+				}
+
+				window.location.replace( redirectUrl );
+			} )();
+		</script>
+	</head>
+
+	<body></body>
+
+</html>

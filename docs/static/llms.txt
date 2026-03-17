@@ -1,0 +1,44 @@
+Momenta
+
+Momenta is a reactive UI framework for Rust focused on simple, fine-grained reactivity and JSX-like authoring through the rsx! macro.
+
+Primary resources
+- Documentation site: https://elcharitas.github.io/momenta/
+- Repository: https://github.com/elcharitas/momenta
+- Crate: https://crates.io/crates/momenta
+
+Project summary
+- Core authoring model: components return Node values and compose with rsx!
+- Reactive primitives: create_signal, create_computed, create_effect, create_resource
+- Rendering targets: DOM rendering for WASM, plus server-side rendering through momenta-ssr
+- Routing: client-side routing through momenta-router
+- Macros: procedural macros for components and JSX-like syntax through momenta-macros
+
+Workspace crates
+- momenta: public framework surface and prelude
+- momenta-core: reactive core and node primitives
+- momenta-dom: DOM renderer for browser apps
+- momenta-router: routing primitives and router context
+- momenta-ssr: buffered, chunked, and hydratable SSR helpers
+- momenta-macros: framework macros including component support
+
+Common documentation entry points
+- /getting-started
+- /philosophy
+- /rsx
+- /signals
+- /computed-signals
+- /effects
+- /resources
+- /components
+- /classes
+- /when
+- /lists
+- /routing
+- /performance
+- /ssr
+- /deployment
+- /examples
+
+Canonical positioning
+Momenta aims to provide a Rust-first developer experience for building interactive interfaces with predictable fine-grained updates, type-safe components, and straightforward SSR support.

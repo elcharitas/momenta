@@ -21,6 +21,7 @@
 		<link data-trunk rel="rust" />
 		<link data-trunk rel="tailwind-css" href="./globals.css" />
 		<link data-trunk rel="copy-dir" href="./static/" />
+		<link data-trunk rel="copy-file" href="./404.html" />
 		<style>
 			html {
 				font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
@@ -69,6 +70,26 @@
 		<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
 		<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/rust.min.js"></script>
 		<script>
+			( function () {
+				var params = new URLSearchParams( window.location.search );
+				var redirectedPath = params.get( 'p' );
+				if ( !redirectedPath ) {
+					return;
+				}
+
+				var decodedPath = decodeURIComponent( redirectedPath );
+				var redirectedHash = params.get( 'h' );
+				var pathSegments = window.location.pathname.split( '/' ).filter( Boolean );
+				var basePath = pathSegments.length > 0 ? '/' + pathSegments[ 0 ] : '';
+				var nextUrl = basePath + decodedPath;
+
+				if ( redirectedHash ) {
+					nextUrl += '#' + decodeURIComponent( redirectedHash );
+				}
+
+				window.history.replaceState( null, '', nextUrl );
+			} )();
+
 			if ( localStorage.theme === 'light' ) {
 				document.documentElement.classList.remove( 'dark' );
 			}

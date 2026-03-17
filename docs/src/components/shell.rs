@@ -1,10 +1,53 @@
-use alloc::{format, string::String, vec, vec::Vec};
+use alloc::{
+    format,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
 use momenta::prelude::*;
 use momenta_router::RouterContext;
 use wasm_bindgen::JsCast;
 
 pub static GITHUB_LINK: &str = "https://github.com/elcharitas/momenta";
 pub static CRATES_LINK: &str = "https://crates.io/crates/momenta";
+
+pub fn docs_base_path() -> &'static str {
+    #[cfg(target_arch = "wasm32")]
+    {
+        if let Some(window) = web_sys::window() {
+            let location = window.location();
+            let host = location.host().unwrap_or_default();
+            let pathname = location.pathname().unwrap_or_default();
+
+            if host.ends_with("github.io")
+                && (pathname == "/momenta" || pathname.starts_with("/momenta/"))
+            {
+                return "/momenta";
+            }
+        }
+    }
+
+    ""
+}
+
+pub fn docs_href(path: &str) -> String {
+    let normalized_path = if path.is_empty() || path == "/" {
+        "/".to_string()
+    } else if path.starts_with('/') {
+        path.to_string()
+    } else {
+        format!("/{}", path)
+    };
+
+    let base_path = docs_base_path();
+    if base_path.is_empty() {
+        normalized_path
+    } else if normalized_path == "/" {
+        format!("{}/", base_path)
+    } else {
+        format!("{}{}", base_path, normalized_path)
+    }
+}
 
 #[wasm_bindgen::prelude::wasm_bindgen]
 extern "C" {
@@ -124,20 +167,24 @@ pub fn Header(props: &HeaderProps) -> Node {
                     <i class="fas fa-bars text-sm"></i>
                 </button>
 
-                <a href="/" class="flex items-center gap-2 ml-2 lg:ml-0">
+                <a href={docs_href("/")} class="flex items-center gap-2 ml-2 lg:ml-0">
                     <img src="./static/icon.svg" alt="Momenta" class="w-6 h-6" />
                     <span class="font-semibold text-[15px]">Momenta</span>
                 </a>
 
                 <nav class="hidden md:flex items-center gap-0.5 ml-8">
-                    <a href="/getting-started" class="px-3 py-1.5 text-[13px] font-medium rounded-md transition-colors hover:bg-muted text-muted-foreground hover:text-foreground">
+                    <a href={docs_href("/getting-started")} class="px-3 py-1.5 text-[13px] font-medium rounded-md transition-colors hover:bg-muted text-muted-foreground hover:text-foreground">
                         Docs
                     </a>
-                    <a href="/signals" class="px-3 py-1.5 text-[13px] font-medium rounded-md transition-colors hover:bg-muted text-muted-foreground hover:text-foreground">
+                    <a href={docs_href("/signals")} class="px-3 py-1.5 text-[13px] font-medium rounded-md transition-colors hover:bg-muted text-muted-foreground hover:text-foreground">
                         Signals
                     </a>
-                    <a href="/examples" class="px-3 py-1.5 text-[13px] font-medium rounded-md transition-colors hover:bg-muted text-muted-foreground hover:text-foreground">
+                    <a href={docs_href("/examples")} class="px-3 py-1.5 text-[13px] font-medium rounded-md transition-colors hover:bg-muted text-muted-foreground hover:text-foreground">
                         Examples
+                    </a>
+                    <span class="mx-1 h-4 w-px bg-border/70"></span>
+                    <a href={docs_href("/static/llms.txt")} class="px-3 py-1.5 text-[13px] font-medium rounded-md transition-colors hover:bg-muted text-muted-foreground hover:text-foreground">
+                        LLMs.txt
                     </a>
                 </nav>
 
@@ -216,7 +263,7 @@ pub fn Header(props: &HeaderProps) -> Node {
                                 }]
                             } else {
                                 filtered.iter().map(|(path, title, desc)| {
-                                    let path_owned = format!("{}", path);
+                                    let path_owned = docs_href(path);
                                     rsx! {
                                         <a href={path_owned} on:click={move |_| { search_open.set(false); query.set(String::new()); }} class="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-muted transition-colors group">
                                             <i class="fas fa-file-alt text-xs text-muted-foreground group-hover:text-primary"></i>
@@ -253,7 +300,7 @@ pub fn Navigation(props: &NavigationProps) -> Node {
         };
 
         rsx! {
-            <a href={path} class={class}>
+            <a href={docs_href(path)} class={class}>
                 {label}
             </a>
         }

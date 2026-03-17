@@ -13,7 +13,7 @@ use pages::*;
 
 #[component]
 fn App() -> Node {
-    let router = RouterContext::new(RouterMode::Pathname);
+    let router = RouterContext::with_base(RouterMode::Pathname, docs_base_path());
     let current_path = router.current_path();
     let theme = create_signal("dark");
     let mobile_menu_open = create_signal(false);
