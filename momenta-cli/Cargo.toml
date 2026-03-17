@@ -16,7 +16,7 @@ path = "src/main.rs"
 
 [[bin]]
 name = "mt"
-path = "src/main.rs"
+path = "src/mt.rs"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
