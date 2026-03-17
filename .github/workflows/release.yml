@@ -218,7 +218,7 @@ jobs:
             cargo publish --manifest-path "$1"
           }
 
-          # publish_crate "momenta-macros/Cargo.toml"
+          publish_crate "momenta-macros/Cargo.toml"
           publish_crate "momenta-core/Cargo.toml"
           publish_crate "momenta-dom/Cargo.toml"
           publish_crate "momenta/Cargo.toml"
