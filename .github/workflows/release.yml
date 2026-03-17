@@ -20,6 +20,11 @@ on:
         description: "Optional custom release title suffix. Defaults to 'Release v{version}'."
         required: false
         type: string
+      force:
+        description: "Force release even if versions already match or tag exists."
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -79,6 +84,7 @@ jobs:
           CURRENT_VERSION: ${{ steps.current.outputs.version }}
           INPUT_VERSION: ${{ inputs.version }}
           INPUT_BUMP: ${{ inputs.bump }}
+          INPUT_FORCE: ${{ inputs.force }}
         run: |
           python3 - <<'PY'
           import os
@@ -108,8 +114,9 @@ jobs:
                   patch += 1
               target = f'{major}.{minor}.{patch}'
 
-          if target == current:
-              raise SystemExit('::error::Target version matches the current version.')
+          force = os.environ.get('INPUT_FORCE', 'false').strip().lower() == 'true'
+          if target == current and not force:
+              raise SystemExit('::error::Target version matches the current version. Use force to override.')
 
           with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
               output.write(f'version={target}\n')
@@ -118,10 +125,17 @@ jobs:
       - name: Ensure tag does not already exist
         env:
           TARGET_VERSION: ${{ steps.bump.outputs.version }}
+          INPUT_FORCE: ${{ inputs.force }}
         run: |
           if git rev-parse "v${TARGET_VERSION}" >/dev/null 2>&1; then
-            echo "::error::Tag v${TARGET_VERSION} already exists."
-            exit 1
+            if [ "${INPUT_FORCE}" = "true" ]; then
+              echo "::warning::Tag v${TARGET_VERSION} already exists — deleting (force mode)."
+              git tag -d "v${TARGET_VERSION}"
+              git push origin ":refs/tags/v${TARGET_VERSION}" || true
+            else
+              echo "::error::Tag v${TARGET_VERSION} already exists. Use force to override."
+              exit 1
+            fi
           fi
 
       - name: Update crate versions
@@ -135,7 +149,7 @@ jobs:
 
           target_version = os.environ['TARGET_VERSION']
           manifests = {
-            pathlib.Path('momenta-macros/Cargo.toml'): ['momenta'],
+            pathlib.Path('momenta-macros/Cargo.toml'): [],
             pathlib.Path('momenta-core/Cargo.toml'): ['momenta-macros'],
             pathlib.Path('momenta-dom/Cargo.toml'): ['momenta-core', 'momenta-macros'],
             pathlib.Path('momenta/Cargo.toml'): ['momenta-macros', 'momenta-core', 'momenta-dom'],
@@ -183,7 +197,7 @@ jobs:
             momenta-router/Cargo.toml \
             momenta-ssr/Cargo.toml \
             Cargo.lock
-          git commit -m "chore(release): bump crates to v${TARGET_VERSION}"
+          git commit -m "chore(release): bump crates to v${TARGET_VERSION}" || echo "::warning::No version changes to commit (force re-release)."
 
       - name: Push release commit to main
         run: |
@@ -194,6 +208,7 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
           TARGET_VERSION: ${{ steps.bump.outputs.version }}
+          INPUT_FORCE: ${{ inputs.force }}
         run: |
           if [ -z "${CARGO_REGISTRY_TOKEN}" ]; then
             echo "::error::CARGO_REGISTRY_TOKEN secret is required to publish crates."
@@ -204,8 +219,13 @@ jobs:
             local manifest_path="$1"
             local crate_name="$2"
 
-            local extra_args="${3:-}"
-            cargo publish --manifest-path "$manifest_path" --token "$CARGO_REGISTRY_TOKEN" $extra_args
+            if [ "${INPUT_FORCE}" = "true" ] && \
+               curl --silent --show-error --fail "https://crates.io/api/v1/crates/${crate_name}/${TARGET_VERSION}" >/dev/null 2>&1; then
+              echo "::warning::${crate_name}@${TARGET_VERSION} already on crates.io — skipping (force mode)."
+              return 0
+            fi
+
+            cargo publish --manifest-path "$manifest_path" --token "$CARGO_REGISTRY_TOKEN"
 
             for attempt in 1 2 3 4 5 6 7 8; do
               if curl --silent --show-error --fail "https://crates.io/api/v1/crates/${crate_name}/${TARGET_VERSION}" >/dev/null; then
@@ -218,11 +238,7 @@ jobs:
             exit 1
           }
 
-          # momenta-macros has a dev-dependency on momenta, creating a circular
-          # dependency in publish order. Use --no-verify because momenta at the
-          # new version isn't on crates.io yet. The crate was already verified
-          # by the earlier cargo check step.
-          publish_crate "momenta-macros/Cargo.toml" "momenta-macros" "--no-verify"
+          publish_crate "momenta-macros/Cargo.toml" "momenta-macros"
           publish_crate "momenta-core/Cargo.toml" "momenta-core"
           publish_crate "momenta-dom/Cargo.toml" "momenta-dom"
           publish_crate "momenta/Cargo.toml" "momenta"
@@ -234,12 +250,18 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TARGET_VERSION: ${{ steps.bump.outputs.version }}
           INPUT_RELEASE_TITLE: ${{ inputs.release_title }}
+          INPUT_FORCE: ${{ inputs.force }}
         run: |
           TAG="v${TARGET_VERSION}"
           if [ -n "${INPUT_RELEASE_TITLE}" ]; then
             TITLE="${TAG} - ${INPUT_RELEASE_TITLE}"
           else
             TITLE="Release ${TAG}"
+          fi
+
+          if [ "${INPUT_FORCE}" = "true" ] && gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::warning::Release $TAG already exists — deleting (force mode)."
+            gh release delete "$TAG" --yes
           fi
 
           gh release create "$TAG" \
