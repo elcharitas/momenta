@@ -29,6 +29,7 @@ pub struct RouterContext {
     mode: RouterMode,
     base_path: &'static str,
     current_path: Signal<String>,
+    route_patterns: Signal<Vec<String>>,
 }
 
 impl RouterContext {
@@ -39,11 +40,13 @@ impl RouterContext {
     pub fn with_base(mode: RouterMode, base_path: &'static str) -> Self {
         let normalized_base = Self::normalize_base_path(base_path);
         let current_path = create_signal(Self::get_initial_path(mode, &normalized_base));
-        Self::setup_listener(mode, current_path, normalized_base);
+        let route_patterns = create_signal(Vec::<String>::new());
+        Self::setup_listener(mode, current_path, route_patterns, normalized_base);
         Self {
             mode,
             base_path: normalized_base,
             current_path,
+            route_patterns,
         }
     }
 
@@ -58,11 +61,13 @@ impl RouterContext {
     ) -> Self {
         let normalized_base = Self::normalize_base_path(base_path);
         let current_path = create_signal(Self::normalize_path(path));
-        Self::setup_listener(mode, current_path, normalized_base);
+        let route_patterns = create_signal(Vec::<String>::new());
+        Self::setup_listener(mode, current_path, route_patterns, normalized_base);
         Self {
             mode,
             base_path: normalized_base,
             current_path,
+            route_patterns,
         }
     }
 
@@ -154,7 +159,12 @@ impl RouterContext {
     }
 
     #[cfg(target_arch = "wasm32")]
-    fn setup_listener(mode: RouterMode, current_path: Signal<String>, base_path: &'static str) {
+    fn setup_listener(
+        mode: RouterMode,
+        current_path: Signal<String>,
+        route_patterns: Signal<Vec<String>>,
+        base_path: &'static str,
+    ) {
         let window = web_sys::window().unwrap();
 
         let closure = Closure::wrap(alloc::boxed::Box::new(move |_event: Event| {
@@ -174,16 +184,21 @@ impl RouterContext {
         closure.forget();
 
         if mode == RouterMode::Pathname {
-            Self::setup_pathname_click_listener(current_path, base_path);
+            Self::setup_pathname_click_listener(current_path, route_patterns, base_path);
         }
     }
 
     #[cfg(target_arch = "wasm32")]
-    fn setup_pathname_click_listener(current_path: Signal<String>, base_path: &'static str) {
+    fn setup_pathname_click_listener(
+        current_path: Signal<String>,
+        route_patterns: Signal<Vec<String>>,
+        base_path: &'static str,
+    ) {
         let document = web_sys::window().unwrap().document().unwrap();
 
         let closure = Closure::wrap(alloc::boxed::Box::new(move |event: Event| {
-            let Some(path) = Self::pathname_from_click_event(&event, &base_path) else {
+            let Some(path) = Self::pathname_from_click_event(&event, route_patterns, &base_path)
+            else {
                 return;
             };
 
@@ -206,7 +221,11 @@ impl RouterContext {
     }
 
     #[cfg(target_arch = "wasm32")]
-    fn pathname_from_click_event(event: &Event, base_path: &str) -> Option<String> {
+    fn pathname_from_click_event(
+        event: &Event,
+        route_patterns: Signal<Vec<String>>,
+        base_path: &str,
+    ) -> Option<String> {
         let mouse_event = event.dyn_ref::<MouseEvent>()?;
 
         if !Self::is_unmodified_primary_click(event, mouse_event) {
@@ -231,6 +250,7 @@ impl RouterContext {
         let path = Self::pathname_from_anchor_click(
             &anchor.get_attribute("href").unwrap_or_default(),
             &anchor.pathname(),
+            route_patterns.get(),
             base_path,
             anchor.origin() == origin,
             &anchor.target(),
@@ -255,6 +275,7 @@ impl RouterContext {
     fn pathname_from_anchor_click(
         href_attr: &str,
         pathname: &str,
+        route_patterns: Vec<String>,
         base_path: &str,
         same_origin: bool,
         target: &str,
@@ -277,11 +298,88 @@ impl RouterContext {
             return None;
         }
 
-        Some(Self::strip_base_path(pathname, base_path))
+        let normalized_path = Self::strip_base_path(pathname, base_path);
+        Self::matches_registered_route(&route_patterns, &normalized_path).then_some(normalized_path)
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn setup_listener(_mode: RouterMode, _current_path: Signal<String>, _base_path: &'static str) {}
+    fn setup_listener(
+        _mode: RouterMode,
+        _current_path: Signal<String>,
+        _route_patterns: Signal<Vec<String>>,
+        _base_path: &'static str,
+    ) {
+    }
+
+    fn matches_registered_route(route_patterns: &[String], path: &str) -> bool {
+        if route_patterns.is_empty() {
+            return true;
+        }
+
+        route_patterns
+            .iter()
+            .any(|pattern| Self::route_pattern_matches(pattern, path))
+    }
+
+    fn route_pattern_matches(pattern: &str, path: &str) -> bool {
+        let normalized_pattern = Self::normalize_path(pattern);
+        let normalized_path = Self::normalize_path(path);
+
+        if normalized_pattern == normalized_path {
+            return true;
+        }
+
+        let pattern_segments = normalized_pattern
+            .trim_matches('/')
+            .split('/')
+            .filter(|segment| !segment.is_empty());
+        let mut path_segments = normalized_path
+            .trim_matches('/')
+            .split('/')
+            .filter(|segment| !segment.is_empty());
+
+        for pattern_segment in pattern_segments {
+            if Self::is_catch_all_segment(pattern_segment) {
+                return true;
+            }
+
+            let Some(path_segment) = path_segments.next() else {
+                return false;
+            };
+
+            if Self::is_dynamic_segment(pattern_segment) {
+                continue;
+            }
+
+            if pattern_segment != path_segment {
+                return false;
+            }
+        }
+
+        path_segments.next().is_none()
+    }
+
+    fn is_dynamic_segment(segment: &str) -> bool {
+        segment.starts_with(':') && segment.len() > 1
+    }
+
+    fn is_catch_all_segment(segment: &str) -> bool {
+        segment == "*"
+            || (segment.starts_with('*') && segment.len() > 1)
+            || (segment.starts_with(':') && segment.ends_with('*') && segment.len() > 2)
+    }
+
+    #[doc(hidden)]
+    pub fn register_routes(&self, patterns: &[&str]) {
+        let next_patterns: Vec<String> = patterns
+            .iter()
+            .map(|pattern| (*pattern).to_string())
+            .collect();
+
+        if self.route_patterns.get() != next_patterns {
+            self.route_patterns.set(next_patterns);
+        }
+    }
 
     pub fn navigate(&self, path: &str) {
         #[cfg(target_arch = "wasm32")]
@@ -332,6 +430,7 @@ mod tests {
     use super::RouterContext;
     use crate::RouterMode;
     use alloc::string::String;
+    use alloc::vec;
     use momenta::prelude::Node;
     use momenta::signals::run_scope_transient;
 
@@ -408,15 +507,53 @@ mod tests {
     }
 
     #[test]
+    fn registered_route_matching_accepts_matching_paths() {
+        let patterns = vec![
+            String::from("/"),
+            String::from("/examples/:slug"),
+            String::from("/assets/*path"),
+        ];
+
+        assert!(RouterContext::matches_registered_route(&patterns, "/"));
+        assert!(RouterContext::matches_registered_route(
+            &patterns,
+            "/examples/counter"
+        ));
+        assert!(RouterContext::matches_registered_route(
+            &patterns,
+            "/assets/docs/llms.txt"
+        ));
+    }
+
+    #[test]
+    fn registered_route_matching_rejects_unmatched_paths() {
+        let patterns = vec![String::from("/"), String::from("/signals")];
+
+        assert!(!RouterContext::matches_registered_route(
+            &patterns,
+            "/static/llms.txt"
+        ));
+    }
+
+    #[test]
     fn pathname_click_intercepts_same_origin_internal_links() {
         assert_eq!(
-            RouterContext::pathname_from_anchor_click("/guide", "/guide", "", true, "", false),
+            RouterContext::pathname_from_anchor_click(
+                "/guide",
+                "/guide",
+                vec![String::from("/guide")],
+                "",
+                true,
+                "",
+                false,
+            ),
             Some(String::from("/guide"))
         );
         assert_eq!(
             RouterContext::pathname_from_anchor_click(
                 "https://example.com/docs",
                 "/docs",
+                vec![String::from("/docs")],
                 "",
                 true,
                 "_self",
@@ -428,6 +565,7 @@ mod tests {
             RouterContext::pathname_from_anchor_click(
                 "/momenta/guide",
                 "/momenta/guide",
+                vec![String::from("/guide")],
                 "/momenta",
                 true,
                 "",
@@ -440,13 +578,22 @@ mod tests {
     #[test]
     fn pathname_click_ignores_special_case_links() {
         assert_eq!(
-            RouterContext::pathname_from_anchor_click("#section", "/guide", "", true, "", false),
+            RouterContext::pathname_from_anchor_click(
+                "#section",
+                "/guide",
+                vec![String::from("/guide")],
+                "",
+                true,
+                "",
+                false,
+            ),
             None
         );
         assert_eq!(
             RouterContext::pathname_from_anchor_click(
                 "/guide?tab=api",
                 "/guide",
+                vec![String::from("/guide")],
                 "",
                 true,
                 "",
@@ -455,21 +602,63 @@ mod tests {
             None
         );
         assert_eq!(
-            RouterContext::pathname_from_anchor_click("/guide#api", "/guide", "", true, "", false),
-            None
-        );
-        assert_eq!(
-            RouterContext::pathname_from_anchor_click("/guide", "/guide", "", false, "", false),
-            None
-        );
-        assert_eq!(
             RouterContext::pathname_from_anchor_click(
-                "/guide", "/guide", "", true, "_blank", false
+                "/guide#api",
+                "/guide",
+                vec![String::from("/guide")],
+                "",
+                true,
+                "",
+                false,
             ),
             None
         );
         assert_eq!(
-            RouterContext::pathname_from_anchor_click("/guide", "/guide", "", true, "", true),
+            RouterContext::pathname_from_anchor_click(
+                "/guide",
+                "/guide",
+                vec![String::from("/guide")],
+                "",
+                false,
+                "",
+                false,
+            ),
+            None
+        );
+        assert_eq!(
+            RouterContext::pathname_from_anchor_click(
+                "/guide",
+                "/guide",
+                vec![String::from("/guide")],
+                "",
+                true,
+                "_blank",
+                false,
+            ),
+            None
+        );
+        assert_eq!(
+            RouterContext::pathname_from_anchor_click(
+                "/guide",
+                "/guide",
+                vec![String::from("/guide")],
+                "",
+                true,
+                "",
+                true,
+            ),
+            None
+        );
+        assert_eq!(
+            RouterContext::pathname_from_anchor_click(
+                "/static/llms.txt",
+                "/static/llms.txt",
+                vec![String::from("/guide")],
+                "",
+                true,
+                "",
+                false,
+            ),
             None
         );
     }
@@ -498,6 +687,8 @@ macro_rules! routes {
         }
     ) => {{
         use alloc::string::ToString;
+
+        $router.register_routes(&[$($pattern),*]);
 
         let mut matcher = $crate::Router::new();
         $(
