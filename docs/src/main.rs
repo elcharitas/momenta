@@ -1,72 +1,50 @@
 #![no_std]
 
 extern crate alloc;
-use alloc::{format, vec, vec::Vec};
+mod components;
+
+use alloc::{format, vec};
+use components::*;
 use momenta::prelude::*;
 use momenta_router::{RouterContext, RouterMode, routes};
-
-static GITHUB_LINK: &str = "https://github.com/elcharitas/momenta";
-static CRATES_LINK: &str = "https://crates.io/crates/momenta";
-
-// Component Props
-pub struct HeaderProps {
-    pub router: RouterContext,
-    pub theme: Signal<&'static str>,
-    pub mobile_menu_open: Signal<bool>,
-}
-
-pub struct NavigationProps {
-    pub router: RouterContext,
-}
-
-pub struct CodeBlockProps {
-    pub code: &'static str,
-    pub language: &'static str,
-    pub filename: Option<&'static str>,
-    pub highlight: Option<&'static str>,
-}
-
-pub struct TabsProps {
-    pub tabs: Vec<(&'static str, &'static str)>,
-    pub children: Vec<Node>,
-}
-
-pub struct PlaygroundProps {
-    pub code: &'static str,
-}
-
-pub struct NoteProps {
-    pub variant: &'static str,
-    pub children: Vec<Node>,
-}
-
-// WASM bindings for highlight.js
-#[wasm_bindgen::prelude::wasm_bindgen]
-extern "C" {
-    #[wasm_bindgen(js_namespace = hljs)]
-    pub fn highlightAll();
-}
 
 // Main App
 #[component]
 fn App() -> Node {
     let router = RouterContext::new(RouterMode::Hash);
     let current_path = router.current_path();
-    let theme = create_signal("light");
+    let theme = create_signal("dark");
     let mobile_menu_open = create_signal(false);
-
     create_effect(|| {
         highlightAll();
     });
 
-    rsx! {
-        <div class={format!("min-h-screen bg-white dark:bg-gray-950 {}", if theme == "dark" { "dark" } else { "" })}>
-            <Header {router} {theme} {mobile_menu_open} />
+    // Detect initial theme from localStorage
+    create_effect(move || {
+        if let Some(window) = web_sys::window() {
+            if let Ok(Some(storage)) = window.local_storage() {
+                if let Ok(Some(saved)) = storage.get_item("theme") {
+                    if saved == "light" {
+                        theme.set("light");
+                        if let Some(doc) = window.document() {
+                            if let Some(el) = doc.document_element() {
+                                let _ = el.class_list().remove_1("dark");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    });
 
-            <div class="flex">
+    rsx! {
+        <div class="min-h-screen bg-background text-foreground transition-colors duration-200">
+            <Header {theme} {mobile_menu_open} />
+
+            <div class="flex pt-14">
                 // Sidebar Navigation
-                {when!(current_path.get() != "/" => <aside class="hidden lg:block w-64 shrink-0 border-r border-gray-200 dark:border-gray-800">
-                        <div class="sticky top-14 h-[calc(100vh-3.5rem)] overflow-y-auto py-8">
+                {when!(current_path.get() != "/" => <aside class="hidden lg:block w-64 shrink-0 border-r border-border/50">
+                        <div class="sticky top-14 h-[calc(100vh-3.5rem)] overflow-y-auto py-6 px-1">
                             <Navigation {router} />
                         </div>
                     </aside>
@@ -75,12 +53,12 @@ fn App() -> Node {
                 // Mobile Navigation
                 {when!(mobile_menu_open =>
                     <div class="lg:hidden fixed inset-0 z-50 flex">
-                        <div class="fixed inset-0 bg-black/20 dark:bg-black/40" on:click={move |_| mobile_menu_open.set(false)}></div>
-                        <div class="relative flex w-full max-w-xs flex-col bg-white dark:bg-gray-950">
-                            <div class="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-800">
-                                <span class="text-lg font-semibold">Navigation</span>
-                                <button type="button" on:click={move |_| mobile_menu_open.set(false)} class="p-2">
-                                    <i class="fas fa-times"></i>
+                        <div class="fixed inset-0 bg-black/40 backdrop-blur-sm" on:click={move |_| mobile_menu_open.set(false)}></div>
+                        <div class="relative flex w-full max-w-xs flex-col bg-background border-r border-border shadow-xl fade-in">
+                            <div class="flex items-center justify-between px-5 py-4 border-b border-border/50">
+                                <span class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Navigation</span>
+                                <button type="button" on:click={move |_| mobile_menu_open.set(false)} class="p-2 rounded-md hover:bg-muted transition-colors">
+                                    <i class="fas fa-times text-sm"></i>
                                 </button>
                             </div>
                             <div class="overflow-y-auto p-4">
@@ -92,6 +70,12 @@ fn App() -> Node {
 
                 // Main Content
                 <main class="flex-1 min-w-0">
+                    {when!(current_path.get() != "/" && !docs_on_this_page_sections(&current_path.get()).is_empty() =>
+                        <div class="xl:hidden px-6 pt-5 sm:px-8 lg:px-10">
+                            <OnThisPage current_path={current_path.get()} compact={true} />
+                        </div>
+                    )}
+
                     {routes!(router, current_path, {
                         "/" => |_| rsx! { <HomePage {router} /> },
                         "/getting-started" => |_| rsx! { <GettingStartedPage /> },
@@ -107,6 +91,9 @@ fn App() -> Node {
                         "/lists" => |_| rsx! { <ForPage /> },
                         "/performance" => |_| rsx! { <PerformancePage /> },
                         "/deployment" => |_| rsx! { <DeploymentPage /> },
+                        "/examples" => |_| rsx! { <ExamplesPage /> },
+                        "/routing" => |_| rsx! { <RoutingPage /> },
+                        "/routing/:section" => |_| rsx! { <RoutingPage /> },
                         "/examples/counter" => |_| rsx! { <CounterExample /> },
                         "/examples/todomvc" => |_| rsx! { <TodoMVCPage /> },
                         "/examples/hackernews" => |_| rsx! { <HackerNewsPage /> },
@@ -114,225 +101,13 @@ fn App() -> Node {
                     })}
                 </main>
 
-                // Right Sidebar (TOC)
-                {when!(current_path.get() != "/" => <aside class="hidden xl:block w-64 shrink-0">
-                        <div class="sticky top-14 h-[calc(100vh-3.5rem)] overflow-y-auto p-8">
-                            // <TableOfContents {current_path} />
+                {when!(current_path.get() != "/" && !docs_on_this_page_sections(&current_path.get()).is_empty() =>
+                    <aside class="hidden xl:block w-72 shrink-0 border-l border-border/50 bg-background/55">
+                        <div class="sticky top-14 max-h-[calc(100vh-3.5rem)] overflow-y-auto px-5 py-6">
+                            <OnThisPage current_path={current_path.get()} compact={false} />
                         </div>
                     </aside>
                 )}
-            </div>
-        </div>
-    }
-}
-
-// Header Component
-#[component]
-fn Header(props: &HeaderProps) -> Node {
-    let theme = props.theme;
-    let mobile_menu_open = props.mobile_menu_open;
-
-    let toggle_theme = move |_| {
-        theme.set(if theme == "dark" { "light" } else { "dark" });
-    };
-
-    rsx! {
-        <header class={"sticky top-0 z-40 w-full border-b border-gray-200 dark:border-gray-800 bg-white/95 dark:bg-gray-950/95 backdrop-blur supports-[backdrop-filter]:bg-white/60 dark:supports-[backdrop-filter]:bg-gray-950/60"}>
-            <div class="flex h-14 items-center px-4 sm:px-6 lg:px-8">
-                <button
-                    class="lg:hidden p-2 -ml-2"
-                    on:click={move |_| mobile_menu_open.set(!mobile_menu_open)}
-                >
-                    <i class="fas fa-bars"></i>
-                </button>
-
-                <a href="#/" class="flex items-center space-x-2 ml-2 lg:ml-0">
-                    <img src="./static/icon.svg" alt="Momenta Logo" class="w-8 h-8" />
-                    <span class="font-bold text-lg">Momenta</span>
-                </a>
-
-                <div class="ml-auto flex items-center space-x-4">
-                    <nav class="hidden md:flex items-center space-x-6 mr-6">
-                        <a href="#/performance" class="text-sm font-medium transition-colors hover:text-blue-600 dark:hover:text-blue-400">
-                            Guides
-                        </a>
-                        <a href="#/getting-started" class="text-sm font-medium transition-colors hover:text-blue-600 dark:hover:text-blue-400">
-                            Documentation
-                        </a>
-                        <a href="#" class="text-sm font-medium transition-colors hover:text-blue-600 dark:hover:text-blue-400">
-                            Playground
-                        </a>
-                    </nav>
-
-                    <button
-                        on:click={toggle_theme}
-                        class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-                    >
-                        {when!(theme == "dark" =>
-                            <i class="fas fa-sun text-yellow-500"></i>
-                        else
-                            <i class="fas fa-moon text-gray-600"></i>
-                        )}
-                    </button>
-
-                    <a href={GITHUB_LINK}
-                       class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
-                        <i class="fab fa-github"></i>
-                    </a>
-                </div>
-            </div>
-        </header>
-    }
-}
-
-// Navigation Component
-#[component]
-fn Navigation(props: &NavigationProps) -> Node {
-    let current_path = props.router.current_path();
-
-    let nav_link = move |path: &'static str, label: &'static str| {
-        let is_active = current_path.get() == path;
-        let class = if is_active {
-            "block px-3 py-1.5 text-sm font-medium text-blue-600 dark:text-blue-400"
-        } else {
-            "block px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200"
-        };
-
-        rsx! {
-            <a href={format!("#{path}")} class={class}>
-                {label}
-            </a>
-        }
-    };
-
-    let section = move |title: &'static str, children: Vec<Node>| {
-        rsx! {
-            <div class="mb-6">
-                <h5 class="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-gray-900 dark:text-gray-100">
-                    {title}
-                </h5>
-                <div class="space-y-1">
-                    {children}
-                </div>
-            </div>
-        }
-    };
-
-    rsx! {
-        <nav class="px-2">
-            {section("Start Here", vec![
-                nav_link("/getting-started", "Getting Started"),
-                nav_link("/philosophy", "Philosophy"),
-            ])}
-
-            {section("Macros", vec![
-                nav_link("/rsx", "rsx!"),
-                nav_link("/components", "#[component]"),
-                nav_link("/classes", "class!"),
-            ])}
-
-            {section("Reactive Primitives", vec![
-                nav_link("/signals", "create_signal"),
-                nav_link("/computed-signals", "create_computed"),
-                nav_link("/effects", "create_effect"),
-                nav_link("/resources", "create_resource"),
-            ])}
-
-            {section("Control Flow", vec![
-                nav_link("/when", "when!"),
-                nav_link("/lists", ".iter().map()"),
-            ])}
-
-            {section("Guides", vec![
-                nav_link("/performance", "Performance"),
-                nav_link("/deployment", "Deployment"),
-            ])}
-        </nav>
-    }
-}
-
-// Reusable Components
-#[component]
-fn CodeBlock(props: &CodeBlockProps) -> Node {
-    rsx! {
-        <div class="my-6 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800">
-            {when!(let Some(filename) = props.filename =>
-                <div class="flex items-center justify-between border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 px-4 py-2">
-                    <span class="text-xs font-medium text-gray-600 dark:text-gray-400">{filename}</span>
-                    <button class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
-                        <i class="fas fa-copy text-xs">"😉"</i>
-                    </button>
-                </div>
-            )}
-            <div class="bg-gray-50 dark:bg-gray-900">
-                <pre class="overflow-x-auto">
-                    <code class={format!("language-{} text-sm", props.language)}>{props.code}</code>
-                </pre>
-            </div>
-        </div>
-    }
-}
-
-#[component]
-fn Note(props: &NoteProps) -> Node {
-    let (bg, border, icon) = match props.variant {
-        "info" => (
-            "bg-blue-50 dark:bg-blue-950/30",
-            "border-blue-200 dark:border-blue-800",
-            "fa-info-circle text-blue-600",
-        ),
-        "warning" => (
-            "bg-amber-50 dark:bg-amber-950/30",
-            "border-amber-200 dark:border-amber-800",
-            "fa-exclamation-triangle text-amber-600",
-        ),
-        "tip" => (
-            "bg-green-50 dark:bg-green-950/30",
-            "border-green-200 dark:border-green-800",
-            "fa-lightbulb text-green-600",
-        ),
-        _ => (
-            "bg-gray-50 dark:bg-gray-900",
-            "border-gray-200 dark:border-gray-800",
-            "fa-info-circle text-gray-600",
-        ),
-    };
-
-    rsx! {
-        <div class={format!("my-6 rounded-lg border {} {} p-4", border, bg)}>
-            <div class="flex">
-                <i class={format!("fas {} mr-3 mt-0.5", icon)}></i>
-                <div class="text-sm">
-                    {&props.children}
-                </div>
-            </div>
-        </div>
-    }
-}
-
-#[component]
-fn Playground(props: &PlaygroundProps) -> Node {
-    rsx! {
-        <div class="my-8 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800">
-            <div class="flex flex-col md:flex-row items-stretch h-full">
-                <div class="w-1/2 border-r border-gray-200 dark:border-gray-800 flex flex-col">
-                    <div class="border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 px-4 py-2">
-                        <span class="text-xs font-medium text-gray-600 dark:text-gray-400">Code</span>
-                    </div>
-                    <div class="bg-gray-50 dark:bg-gray-900 flex-1">
-                        <pre class="overflow-x-auto h-full">
-                            <code class="language-rust text-xs overflow-x">{props.code}</code>
-                        </pre>
-                    </div>
-                </div>
-                <div class="w-1/2 flex flex-col">
-                    <div class="border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 px-4 py-2">
-                        <span class="text-xs font-medium text-gray-600 dark:text-gray-400">Output</span>
-                    </div>
-                    <div class="flex-1 text-sm text-gray-600 dark:text-gray-400">
-                        <CounterExample />
-                    </div>
-                </div>
             </div>
         </div>
     }
@@ -342,62 +117,171 @@ fn Playground(props: &PlaygroundProps) -> Node {
 #[component]
 fn HomePage(_props: &NavigationProps) -> Node {
     rsx! {
-        <div class="mx-auto max-w-4xl px-4 py-16 sm:px-6 lg:px-8">
-            <div class="text-center py-16">
-                <h1 class="text-4xl font-bold tracking-tight text-gray-900 dark:text-gray-100 sm:text-5xl">
-                    "Simple and performant reactivity for building user interfaces"
+        <div class="fade-in">
+            <div class="px-6 pt-20 pb-16 sm:px-8 text-center">
+                <div class="inline-flex items-center gap-2 rounded-full border border-border/50 bg-card px-3 py-1 mb-6">
+                    <span class="h-1.5 w-1.5 rounded-full bg-primary"></span>
+                    <span class="text-xs font-medium text-muted-foreground">Built for humans and AI</span>
+                </div>
+                <h1 class="text-4xl font-bold tracking-tight sm:text-5xl lg:text-6xl">
+                    "Rust UI that feels familiar" <br class="hidden sm:block" />
+                    <span class="text-primary">"from the first read"</span>
                 </h1>
-                <p class="mt-6 text-lg text-gray-600 dark:text-gray-400">
-                    "Momenta makes it simple to build high-performance, reactive user interfaces using Rust's type system and ownership model."
+                <p class="mt-4 text-sm text-muted-foreground max-w-2xl mx-auto leading-relaxed">
+                    "If you already know Rust and can read HTML or JSX, Momenta keeps the mental model close to what you already know: components, markup, signals, derived values, and effects."
                 </p>
-                <div class="mt-10 flex items-center justify-center gap-4">
-                    <a href="#/getting-started" class="rounded-lg bg-blue-600 px-6 py-3 text-sm font-semibold text-white hover:bg-blue-700">
-                        "Get Started"
+                <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
+                    <a href="#/getting-started" class="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90 transition-opacity">
+                        "Read the Docs"
+                        <i class="fas fa-arrow-right text-xs"></i>
                     </a>
-                    <a href={GITHUB_LINK} class="rounded-lg border border-gray-300 dark:border-gray-700 px-6 py-3 text-sm font-semibold hover:bg-gray-50 dark:hover:bg-gray-900">
-                        "View on GitHub"
+                    <a href={GITHUB_LINK} class="inline-flex items-center gap-2 rounded-lg border border-border px-5 py-2.5 text-sm font-medium hover:bg-muted transition-colors">
+                        <i class="fab fa-github"></i>
+                        "GitHub"
                     </a>
-                    <a href={CRATES_LINK} class="rounded-lg bg-yellow-600 border border-gray-300 dark:border-gray-700 px-6 py-3 text-sm font-semibold hover:bg-yellow-700 dark:hover:bg-yellow-900">
-                        "View on Crates.io"
+                    <a href={CRATES_LINK} class="inline-flex items-center gap-2 rounded-lg border border-border px-5 py-2.5 text-sm font-medium hover:bg-muted transition-colors">
+                        <i class="fas fa-cube"></i>
+                        "Crates.io"
+                    </a>
+                </div>
+                <div class="mt-6 inline-flex items-center gap-3 bg-card border border-border/50 rounded-lg px-4 py-2">
+                    <span class="text-muted-foreground text-xs">"$"</span>
+                    <code class="text-sm font-mono">"cargo add momenta"</code>
+                </div>
+            </div>
+
+            <div class="mx-auto max-w-6xl px-6 sm:px-8 pb-16">
+                <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    <Feature
+                        icon="fas fa-code"
+                        title="Familiar Syntax"
+                        description="rsx! reads like HTML or JSX, so the shape of the UI is easy to scan at a glance."
+                    />
+                    <Feature
+                        icon="fas fa-seedling"
+                        title="Low Learning Curve"
+                        description="Signals, computed values, and effects map cleanly to concepts most frontend developers already know."
+                    />
+                    <Feature
+                        icon="fas fa-shield-alt"
+                        title="AI-Friendly Structure"
+                        description="State, derivation, and side effects stay explicit, which makes generated code easier to verify and maintain."
+                    />
+                    <Feature
+                        icon="fas fa-cubes"
+                        title="Rust-Native Components"
+                        description="Momenta feels like Rust, not a JavaScript framework translated line by line into Rust syntax."
+                    />
+                    <Feature
+                        icon="fas fa-bolt"
+                        title="Direct Reactive Updates"
+                        description="Track dependencies automatically and update the bindings that changed instead of rerunning everything."
+                    />
+                    <Feature
+                        icon="fas fa-puzzle-piece"
+                        title="Scales Without Magic"
+                        description="Use the same primitives for a quick component, a routed app, or a larger codebase without hidden conventions."
+                    />
+                </div>
+            </div>
+
+            <div class="mx-auto max-w-6xl px-6 sm:px-8 pb-16">
+                <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                    <div>
+                        <h2 class="text-lg font-semibold">Why Momenta feels easy to adopt</h2>
+                        <p class="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+                            "The goal is not to invent a new language for UI. The goal is to let Rust developers move fast with patterns that are already widely understood by people, editors, and coding agents."
+                        </p>
+                    </div>
+                </div>
+
+                <div class="mt-6 grid gap-4 lg:grid-cols-3">
+                    <div class="theory-panel not-prose">
+                        <div class="flex h-10 w-10 items-center justify-center rounded-2xl border border-primary/15 bg-primary/10 text-primary">
+                            <i class="fas fa-eye text-sm"></i>
+                        </div>
+                        <h3 class="mt-4 text-base font-semibold tracking-tight">Readable on the first pass</h3>
+                        <p class="mt-2 text-sm leading-6 text-muted-foreground">
+                            "Markup looks like markup. Components look like Rust functions. Dynamic behavior is local to the expressions that actually change."
+                        </p>
+                    </div>
+                    <div class="theory-panel not-prose">
+                        <div class="flex h-10 w-10 items-center justify-center rounded-2xl border border-primary/15 bg-primary/10 text-primary">
+                            <i class="fas fa-robot text-sm"></i>
+                        </div>
+                        <h3 class="mt-4 text-base font-semibold tracking-tight">Easy for AI to generate well</h3>
+                        <p class="mt-2 text-sm leading-6 text-muted-foreground">
+                            "Clear separation between signals, computed values, effects, and components means less ambiguity when an AI suggests new code or edits existing code."
+                        </p>
+                    </div>
+                    <div class="theory-panel not-prose">
+                        <div class="flex h-10 w-10 items-center justify-center rounded-2xl border border-primary/15 bg-primary/10 text-primary">
+                            <i class="fas fa-person-walking-arrow-right text-sm"></i>
+                        </div>
+                        <h3 class="mt-4 text-base font-semibold tracking-tight">No steep framework cliff</h3>
+                        <p class="mt-2 text-sm leading-6 text-muted-foreground">
+                            "You do not have to internalize a large runtime model before being productive. If you understand Rust ownership and basic reactive ideas, you can start shipping quickly."
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mx-auto max-w-6xl px-6 sm:px-8 pb-16">
+                <h2 class="text-lg font-semibold mb-4">Explore</h2>
+                <div class="grid gap-3 sm:grid-cols-2">
+                    <a href="#/getting-started" class="card-link group">
+                        <div class="flex items-start gap-3">
+                            <div class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                                <i class="fas fa-rocket text-sm"></i>
+                            </div>
+                            <div>
+                                <h3 class="text-sm font-medium group-hover:text-primary transition-colors">Getting Started</h3>
+                                <p class="text-xs text-muted-foreground mt-0.5">Install Momenta and build your first app.</p>
+                            </div>
+                        </div>
+                    </a>
+                    <a href="#/signals" class="card-link group">
+                        <div class="flex items-start gap-3">
+                            <div class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                                <i class="fas fa-wave-square text-sm"></i>
+                            </div>
+                            <div>
+                                <h3 class="text-sm font-medium group-hover:text-primary transition-colors">Signals</h3>
+                                <p class="text-xs text-muted-foreground mt-0.5">Learn about fine-grained reactive primitives.</p>
+                            </div>
+                        </div>
+                    </a>
+                    <a href="#/components" class="card-link group">
+                        <div class="flex items-start gap-3">
+                            <div class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                                <i class="fas fa-cubes text-sm"></i>
+                            </div>
+                            <div>
+                                <h3 class="text-sm font-medium group-hover:text-primary transition-colors">Components</h3>
+                                <p class="text-xs text-muted-foreground mt-0.5">Create reusable, composable UI components.</p>
+                            </div>
+                        </div>
+                    </a>
+                    <a href="#/examples" class="card-link group">
+                        <div class="flex items-start gap-3">
+                            <div class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                                <i class="fas fa-play text-sm"></i>
+                            </div>
+                            <div>
+                                <h3 class="text-sm font-medium group-hover:text-primary transition-colors">Examples</h3>
+                                <p class="text-xs text-muted-foreground mt-0.5">See Momenta in action with live demos.</p>
+                            </div>
+                        </div>
                     </a>
                 </div>
             </div>
 
-            <div class="mt-24 grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
-                <Feature
-                    icon="fas fa-zap"
-                    title="Element-Level Reactivity"
-                    description="Automatically track dependencies and update only what has changed."
-                />
-                <Feature
-                    icon="fas fa-code"
-                    title="Familiar API"
-                    description="Inspired by React with a Rust-first approach to reactive programming."
-                />
-                <Feature
-                    icon="fas fa-shield-alt"
-                    title="Type Safe"
-                    description="Leverage Rust's type system for compile-time guarantees and better DX."
-                />
-                <Feature
-                    icon="fas fa-feather"
-                    title="Lightweight"
-                    description="Small runtime with minimal overhead. Your apps stay fast."
-                />
-                <Feature
-                    icon="fas fa-server"
-                    title="SSR Ready"
-                    description="Server-side rendering support out of the box for better performance."
-                />
-                <Feature
-                    icon="fas fa-puzzle-piece"
-                    title="Composable"
-                    description="Build complex UIs from simple, reusable reactive primitives."
-                />
-            </div>
-
-            <div class="mt-24">
-                <h2 class="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-6">Quick Example</h2>
+            // Playground section
+            <div class="mx-auto max-w-6xl px-6 sm:px-8 pb-16">
+                <h2 class="text-lg font-semibold mb-4">Quick Example</h2>
+                <p class="max-w-3xl text-sm leading-6 text-muted-foreground">
+                    "This is the whole pitch in code form: a component, a signal, event handlers, and markup that still looks like the interface you are building."
+                </p>
                 <Playground
                     code={r#"use momenta::prelude::*;
 
@@ -405,39 +289,114 @@ fn HomePage(_props: &NavigationProps) -> Node {
 fn CounterExample() -> Node {
     let mut count = create_signal(0);
     rsx! {
-        <div class="bg-gradient-to-br from-purple-400 to-blue-600 flex items-center justify-center p-4">
-            <div class="bg-white/20 backdrop-blur-lg rounded-3xl p-8 shadow-2xl border border-white/30">
-                <h1 class="text-3xl font-bold text-white mb-6 text-center">
+        <div class="flex items-center justify-center p-6">
+            <div class="text-center space-y-4">
+                <h1 class="text-2xl font-bold">
                     "Momenta Counter"
                 </h1>
-                <div class="text-6xl font-bold text-center mb-8 transition-all duration-300 text-white">
+                <div class="text-5xl font-bold">
                     {count}
                 </div>
-                <div class="flex gap-4 justify-center">
+                <div class="flex gap-3 justify-center">
                     <button
-                        class="px-6 py-3 bg-red-500 hover:bg-red-600 text-white font-semibold rounded-xl transition-all duration-200 transform hover:scale-105 shadow-lg"
+                        class="px-5 py-2 bg-red-500 text-white rounded-lg"
                         on:click={move |_| count -= 1}
                     >
-                        "− Decrease"
+                        "Decrease"
                     </button>
                     <button
-                        class="px-6 py-3 bg-green-500 hover:bg-green-600 text-white font-semibold rounded-xl transition-all duration-200 transform hover:scale-105 shadow-lg"
+                        class="px-5 py-2 bg-green-500 text-white rounded-lg"
                         on:click={move |_| count += 1}
                     >
-                        "+ Increase"
+                        "Increase"
                     </button>
                 </div>
                 <button
-                    class="w-full mt-4 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors"
+                    class="px-4 py-1.5 border rounded-lg text-sm"
                     on:click={move |_| count.set(0)}
                 >
-                    "Reset Count: " {count}
+                    "Reset"
                 </button>
             </div>
         </div>
     }
 }"#} />
             </div>
+            <div class="mx-auto max-w-6xl px-6 sm:px-8 pb-16">
+                <h2 class="text-lg font-semibold">Momenta compared to familiar alternatives</h2>
+                <p class="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
+                    "Momenta is designed to feel approachable whether you are coming from React, exploring fine-grained Rust frameworks, or trying to avoid low-level DOM boilerplate. The tradeoff is deliberate explicitness instead of hidden framework magic."
+                </p>
+
+                <div class="mt-6 grid gap-4 lg:grid-cols-3">
+                    <div class="theory-panel not-prose">
+                        <div class="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">If you know React or Preact</div>
+                        <h3 class="mt-3 text-base font-semibold tracking-tight">Familiar view code, less rerender-oriented thinking</h3>
+                        <p class="mt-2 text-sm leading-6 text-muted-foreground">
+                            "You still write components and HTML-like markup, but Momenta prefers explicit signals and targeted reactive updates over hook-heavy rerender cycles."
+                        </p>
+                    </div>
+                    <div class="theory-panel not-prose">
+                        <div class="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">If you are evaluating Leptos or Solid-style ideas</div>
+                        <h3 class="mt-3 text-base font-semibold tracking-tight">Comparable fine-grained mindset, Rust-first surface area</h3>
+                        <p class="mt-2 text-sm leading-6 text-muted-foreground">
+                            "Momenta keeps fine-grained reactivity front and center, while aiming for an API that stays close to ordinary Rust and remains easy to explain from the code itself."
+                        </p>
+                    </div>
+                    <div class="theory-panel not-prose">
+                        <div class="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">If you are considering lower-level or heavier Rust UI stacks</div>
+                        <h3 class="mt-3 text-base font-semibold tracking-tight">Less boilerplate, fewer abstractions to fight</h3>
+                        <p class="mt-2 text-sm leading-6 text-muted-foreground">
+                            "Momenta gives you components, routing, and reactivity primitives without forcing you into a large conceptual layer between your Rust code and the UI you want to build."
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            // Footer
+            <footer class="border-t border-border/50 mt-8">
+                <div class="px-6 sm:px-8 py-12">
+                    <div class="grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
+                        <div>
+                            <div class="flex items-center gap-2 mb-4">
+                                <img src="./static/icon.svg" alt="Momenta" class="w-5 h-5" />
+                                <span class="font-semibold text-sm">Momenta</span>
+                            </div>
+                            <p class="text-xs text-muted-foreground leading-relaxed">
+                                "A Rust UI framework with familiar syntax, explicit reactivity, and code that is comfortable for both humans and AI to work with."
+                            </p>
+                        </div>
+                        <div>
+                            <h4 class="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Documentation</h4>
+                            <div class="space-y-2">
+                                <a href="#/getting-started" class="block text-sm text-muted-foreground hover:text-foreground transition-colors">Getting Started</a>
+                                <a href="#/signals" class="block text-sm text-muted-foreground hover:text-foreground transition-colors">Signals</a>
+                                <a href="#/components" class="block text-sm text-muted-foreground hover:text-foreground transition-colors">Components</a>
+                                <a href="#/rsx" class="block text-sm text-muted-foreground hover:text-foreground transition-colors">RSX Syntax</a>
+                            </div>
+                        </div>
+                        <div>
+                            <h4 class="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Examples</h4>
+                            <div class="space-y-2">
+                                <a href="#/examples/counter" class="block text-sm text-muted-foreground hover:text-foreground transition-colors">Counter</a>
+                                <a href="#/examples/todomvc" class="block text-sm text-muted-foreground hover:text-foreground transition-colors">TodoMVC</a>
+                                <a href="#/examples/hackernews" class="block text-sm text-muted-foreground hover:text-foreground transition-colors">Hacker News</a>
+                                <a href="#/examples/realworld" class="block text-sm text-muted-foreground hover:text-foreground transition-colors">RealWorld</a>
+                            </div>
+                        </div>
+                        <div>
+                            <h4 class="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Community</h4>
+                            <div class="space-y-2">
+                                <a href={GITHUB_LINK} class="block text-sm text-muted-foreground hover:text-foreground transition-colors">GitHub</a>
+                                <a href={CRATES_LINK} class="block text-sm text-muted-foreground hover:text-foreground transition-colors">Crates.io</a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-10 pt-6 border-t border-border/50">
+                        <p class="text-xs text-muted-foreground">"Built with Momenta. Open source under the MIT License."</p>
+                    </div>
+                </div>
+            </footer>
         </div>
     }
 }
@@ -445,12 +404,12 @@ fn CounterExample() -> Node {
 #[component]
 fn Feature(props: &FeatureProps) -> Node {
     rsx! {
-        <div class="rounded-lg border border-gray-200 dark:border-gray-800 p-6">
-            <div class="mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">
-                <i class={props.icon}></i>
+        <div class="card-link group rounded-lg p-4">
+            <div class="mb-2.5 flex h-9 w-9 items-center justify-center rounded-md bg-primary/10 text-primary">
+                <i class={format!("{} text-sm", props.icon)}></i>
             </div>
-            <h3 class="mb-2 font-semibold text-gray-900 dark:text-gray-100">{props.title}</h3>
-            <p class="text-sm text-gray-600 dark:text-gray-400">{props.description}</p>
+            <h3 class="mb-1 font-medium text-sm">{props.title}</h3>
+            <p class="text-xs text-muted-foreground leading-relaxed">{props.description}</p>
         </div>
     }
 }
@@ -464,20 +423,37 @@ pub struct FeatureProps {
 #[component]
 fn ComputedSignalsPage() -> Node {
     rsx! {
-        <article class="mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8">
-            <header class="mb-12">
-                <h1 class="text-4xl font-bold text-gray-900 dark:text-gray-100">Computed Signals</h1>
-                <p class="mt-4 text-lg text-gray-600 dark:text-gray-400">
-                    Computed signals and memoization for efficient reactive computations.
-                </p>
-            </header>
+        <article class="px-6 py-10 sm:px-8 lg:px-10 xl:pr-8 2xl:pr-10 fade-in">
+            <DocPageHeader
+                title="Computed Signals"
+                summary="Use computed values when state can be described as a function of other state. Momenta keeps those relationships explicit so derived data stays cheap, predictable, and easy to reason about."
+                chips={vec!["derived state", "automatic dependency tracking", "memoized reads"]}
+                stats={vec![
+                    ("Best for", "Values that should stay in sync with source signals"),
+                    ("Avoid", "Storing duplicated state that can drift out of date"),
+                    ("Mental model", "A live formula instead of another store"),
+                ]}
+            />
 
-            <section class="prose prose-gray dark:prose-invert max-w-none">
+            <section class="prose prose-neutral dark:prose-invert max-w-none prose-headings:tracking-tight prose-p:leading-relaxed prose-a:text-primary prose-a:no-underline hover:prose-a:underline">
                 <h2 id="introduction">Introduction</h2>
                 <p>
                     Computed signals are reactive values that automatically recalculate when their dependencies change.
                     They are perfect for derived state and expensive computations that should be cached.
                 </p>
+
+                <div class="doc-grid my-8">
+                    <TheoryCard icon="fas fa-link" title="Computed values model relationships">
+                        <p>
+                            "Reach for a computed signal when the value should always be derivable from other signals. That keeps source-of-truth state small and removes synchronization bugs."
+                        </p>
+                    </TheoryCard>
+                    <TheoryCard icon="fas fa-scale-balanced" title="Keep derivation pure">
+                        <p>
+                            "A computed closure should answer a question, not perform work with side effects. When you need logging, network calls, or DOM coordination, use an effect instead."
+                        </p>
+                    </TheoryCard>
+                </div>
 
                 <Note variant="info">
                     <p>
@@ -614,16 +590,16 @@ count.set(10); // Next get() will recompute"#}
 #[component]
 fn ClassesPage() -> Node {
     rsx! {
-        <article class="mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8">
-            <header class="mb-12">
-                <h1 class="text-4xl font-bold text-gray-900 dark:text-gray-100">Dynamic Classes</h1>
-                <p class="mt-4 text-lg text-gray-600 dark:text-gray-400">
+        <article class="px-6 py-10 sm:px-8 lg:px-10 fade-in">
+            <header class="mb-10">
+                <h1 class="text-3xl font-bold tracking-tight sm:text-4xl">Dynamic Classes</h1>
+                <p class="mt-3 text-lg text-muted-foreground leading-relaxed">
                     Learn how to work with dynamic CSS classes using the class! macro and classes() function.
                 </p>
             </header>
 
-            <section class="prose prose-gray dark:prose-invert max-w-none">
-                <h2 class="font-bold uppercase">Introduction</h2>
+            <section class="prose prose-neutral dark:prose-invert max-w-none prose-headings:tracking-tight prose-p:leading-relaxed prose-a:text-primary prose-a:no-underline hover:prose-a:underline">
+                <h2 id="introduction" class="font-bold tracking-tight">Introduction</h2>
                 <p>
                     Momenta provides two utilities for working with dynamic CSS classes: the class! macro for ergonomic class composition and the classes() function for conditional class application.
                 </p>
@@ -739,7 +715,6 @@ fn Badge(props: &BadgeProps) -> Node {
     }
 }
 
-// Usage
 rsx! {
     <Badge variant="success" is_pill={true}>
         Active
@@ -820,7 +795,7 @@ fn Navigation() -> Node {
 }"#}
                 />
 
-                <h2 class="font-bold uppercase">Best Practices</h2>
+                <h2 class="font-bold tracking-tight">Best Practices</h2>
                 <ul>
                     <li>Use class! for inline, component-local class logic</li>
                     <li>Use classes() for computed or reusable class utilities</li>
@@ -842,14 +817,14 @@ fn Navigation() -> Node {
 #[component]
 fn ForPage() -> Node {
     rsx! {
-        <article class="mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8">
-            <header class="mb-12">
-                <h1 class="text-4xl font-bold text-gray-900 dark:text-gray-100">List Rendering</h1>
-                <p class="mt-4 text-lg text-gray-600 dark:text-gray-400">
+        <article class="px-6 py-10 sm:px-8 lg:px-10 fade-in">
+            <header class="mb-10">
+                <h1 class="text-3xl font-bold tracking-tight sm:text-4xl">List Rendering</h1>
+                <p class="mt-3 text-lg text-muted-foreground leading-relaxed">
                     "Rendering lists of items efficiently using Rust's iterators."
                 </p>
             </header>
-            <section class="prose prose-gray dark:prose-invert max-w-none">
+            <section class="prose prose-neutral dark:prose-invert max-w-none prose-headings:tracking-tight prose-p:leading-relaxed prose-a:text-primary prose-a:no-underline hover:prose-a:underline">
                 <h2 id="introduction">Introduction</h2>
                 <p>
                     "List rendering is a common task in UI development. Momenta leverages Rust's powerful iterator system to provide efficient and type-safe list rendering."
@@ -872,7 +847,7 @@ fn FruitList() -> Node {
 
     rsx! {
         <div>
-            <h2 class="font-bold uppercase">"Fruit List"</h2>
+            <h2 class="font-bold tracking-tight">"Fruit List"</h2>
             <ul>
                 {fruits.map(|fruit| rsx! {
                     <li>{fruit}</li>
@@ -987,13 +962,13 @@ fn TodoList() -> Node {
 
     rsx! {
         <div>
-            <h2 class="font-bold uppercase">"Todo List"</h2>
+            <h2 class="font-bold tracking-tight">"Todo List"</h2>
             <ul class="space-y-2">
                 {todos.map(|todo| {
                     let id = todo.id;
                     rsx! {
                         <li class={format!("flex items-center {}",
-                            if todo.completed { "line-through text-gray-400" } else { "" }
+                            if todo.completed { "line-through text-muted-foreground" } else { "" }
                         )}>
                             <input
                                 type="checkbox"
@@ -1011,7 +986,11 @@ fn TodoList() -> Node {
                 <input
                     type="text"
                     value={new_todo_text}
-                    on:input={move |e| new_todo_text.set(e.value())}
+                    on:input={move |e: web_sys::Event| {
+                        if let Some(input) = e.target().and_then(|t| t.dyn_into::<web_sys::HtmlInputElement>().ok()) {
+                            new_todo_text.set(input.value());
+                        }
+                    }}
                     placeholder="Add a new todo"
                     class="border p-2 rounded-l"
                 />
@@ -1080,7 +1059,7 @@ rsx! {
 
                 // Map to nodes
                 filtered.iter().map(|n| rsx! {
-                    <li class="bg-gray-100 dark:bg-gray-800 p-2 rounded text-center">
+                    <li class="bg-muted p-2 rounded text-center">
                         {n}
                     </li>
                 })
@@ -1100,7 +1079,7 @@ rsx! {
                     <li>"Pre-compute derived values outside of the render function"</li>
                 </ul>
 
-                <h2 class="font-bold uppercase">Best Practices</h2>
+                <h2 class="font-bold tracking-tight">Best Practices</h2>
                 <ul>
                     <li>"Use .iter().map() pattern for list rendering"</li>
                     <li>"Extract complex item rendering into separate components"</li>
@@ -1109,12 +1088,12 @@ rsx! {
                     <li>"Consider memoizing expensive computations for list items"</li>
                 </ul>
 
-                <div class="mt-12 flex items-center justify-between border-t border-gray-200 dark:border-gray-800 pt-6">
-                    <a href="#" class="text-sm text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200">
+                <div class="mt-16 flex items-center justify-between border-t border-border pt-8">
+                    <a href="#/when" class="text-sm text-muted-foreground hover:text-foreground transition-colors">
                         "← Conditional Rendering"
                     </a>
-                    <a href="#" class="text-sm text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200">
-                        "Reactivity →"
+                    <a href="#/performance" class="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                        "Performance →"
                     </a>
                 </div>
             </section>
@@ -1125,46 +1104,51 @@ rsx! {
 #[component]
 fn ResourcesPage() -> Node {
     rsx! {
-        <article class="mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8">
-            <header class="mb-12">
-                <h1 title="" class="text-4xl font-bold text-gray-900 dark:text-gray-100">Resources</h1>
-                <p class="mt-4 text-lg text-gray-600 dark:text-gray-400">
-                    "Resources provide a way to handle asynchronous data loading with built-in loading and error states."
+        <article class="px-6 py-10 sm:px-8 lg:px-10 fade-in">
+            <header class="mb-10">
+                <h1 title="" class="text-3xl font-bold tracking-tight sm:text-4xl">Resources</h1>
+                <p class="mt-3 text-lg text-muted-foreground leading-relaxed">
+                    "Resources provide a reactive wrapper for async loading with an explicit status signal and retry support."
                 </p>
             </header>
 
-            <section class="prose prose-gray dark:prose-invert max-w-none">
-                <h2 class="font-bold uppercase">Introduction</h2>
+            <section class="prose prose-neutral dark:prose-invert max-w-none prose-headings:tracking-tight prose-p:leading-relaxed prose-a:text-primary prose-a:no-underline hover:prose-a:underline">
+                <h2 class="font-bold tracking-tight">Introduction</h2>
                 <p>
-                    "Resources in Momenta are reactive primitives designed for handling asynchronous operations like API calls,
-                    file loading, or any other async task. They automatically manage loading states, errors, and data updates."
+                    "Resources in Momenta are reactive primitives for async work such as API calls and background loading.
+                    A resource gives you the latest resolved value, a status signal you can render from, and a retry() method to trigger the fetcher again."
                 </p>
 
-                <h2 class="font-bold uppercase">Basic Usage</h2>
+                <Note variant="info">
+                    <p>
+                        <strong>"Import path:"</strong> " Resource APIs currently live under momenta::signals, so examples here import create_resource and ResourceStatus from there alongside the prelude."
+                    </p>
+                </Note>
+
+                <h2 id="basic-usage" class="font-bold tracking-tight">Basic Usage</h2>
                 <CodeBlock
                     language="rust"
                     filename="src/main.rs"
                     highlight=""
                     code={r#"use momenta::prelude::*;
+use momenta::signals::{create_resource, ResourceStatus};
 
 #[component]
 fn UserProfile() -> Node {
     let user_resource = create_resource(|| async {
-        // Simulate API call
         fetch_user_data().await
     });
 
     rsx! {
         <div>
-            {when!(user_resource.loading() =>
-                <div class="loading">"Loading user data..."</div>
-            else when!(user_resource.error().is_some() =>
-                <div class="error">"Error loading user"</div>
-            ) else
-                <div>
+            {match user_resource.status().get() {
+                ResourceStatus::Idle | ResourceStatus::Pending | ResourceStatus::Loading => rsx! {
+                    <div class="loading">"Loading user data..."</div>
+                },
+                ResourceStatus::Resolved => rsx! {
                     <h1>"User: " {user_resource.get().unwrap_or_default()}</h1>
-                </div>
-            )}
+                },
+            }}
         </div>
     }
 }
@@ -1176,24 +1160,21 @@ async fn fetch_user_data() -> String {
 
                 <Note variant="info">
                     <p>
-                        <strong>"Automatic State Management:"</strong> " Resources automatically handle loading, error, and success states.
-                        You don't need to manually manage these states with separate signals."
+                        <strong>"Resource model:"</strong> " A resource tracks progress with ResourceStatus and stores the latest resolved value as Option&lt;T&gt;."
                     </p>
                 </Note>
 
-                <h2 class="font-bold uppercase">Creating Resources</h2>
+                <h2 id="creating-resources" class="font-bold tracking-tight">Creating Resources</h2>
                 <CodeBlock
                     language="rust"
                     filename="src/main.rs"
                     highlight=""
-                    code={r#"use momenta::prelude::*;
+                    code={r#"use momenta::signals::create_resource;
 
-// Simple resource
 let user_data = create_resource(|| async {
     fetch_user().await
 });
 
-// Resource with parameters
 let user_posts = create_resource(move || {
     let user_id = user_id.get();
     async move {
@@ -1201,7 +1182,6 @@ let user_posts = create_resource(move || {
     }
 });
 
-// Resource that depends on signals
 let search_results = create_resource(move || {
     let query = search_query.get();
     async move {
@@ -1214,48 +1194,46 @@ let search_results = create_resource(move || {
 });"#}
                 />
 
-                <h2 class="font-bold uppercase">Resource States</h2>
+                <h2 id="resource-states" class="font-bold tracking-tight">Resource States</h2>
                 <CodeBlock
                     language="rust"
                     filename="src/main.rs"
                     highlight=""
-                    code={r#"#[component]
+                    code={r#"use momenta::signals::{create_resource, ResourceStatus};
+
+#[component]
 fn ResourceStates() -> Node {
     let data_resource = create_resource(|| async {
-        // Simulate API call that might fail
-        fetch_data_with_potential_error().await
+        fetch_data().await
     });
 
     rsx! {
         <div>
-            {when!(data_resource.loading() =>
-                <div class="loading">"Loading data..."</div>
-            else when!(data_resource.error().is_some() =>
-                <div class="error">
-                    "Error: " {data_resource.error().unwrap_or_default()}
-                    <button on:click={move |_| data_resource.refetch()}>"Retry"</button>
-                </div>
-            ) else
+            <p>"Status: " {format!("{:?}", data_resource.status().get())}</p>
+            {when!(data_resource.status().get() == ResourceStatus::Resolved =>
                 <div class="success">
                     "Data: " {data_resource.get().unwrap_or_default()}
                 </div>
+            else
+                <div class="loading">"Waiting for data..."</div>
             )}
         </div>
     }
 }
 
-async fn fetch_data_with_potential_error() -> Result<String, String> {
-    // Your async logic here
-    Ok("Successfully loaded data".to_string())
+async fn fetch_data() -> String {
+    "Successfully loaded data".to_string()
 }"#}
                 />
 
-                <h2 class="font-bold uppercase">Retrying Resources</h2>
+                <h2 id="retrying-resources" class="font-bold tracking-tight">Retrying Resources</h2>
                 <CodeBlock
                     language="rust"
                     filename="src/main.rs"
                     highlight=""
-                    code={r#"#[component]
+                    code={r#"use momenta::signals::{create_resource, ResourceStatus};
+
+#[component]
 fn RetryableResource() -> Node {
     let api_resource = create_resource(|| async {
         fetch_api_data().await
@@ -1263,31 +1241,30 @@ fn RetryableResource() -> Node {
 
     rsx! {
         <div>
-            {when!(api_resource.loading() =>
-                <div>"Fetching data..."</div>
-            else when!(api_resource.error().is_some() =>
-                <div>
-                    <p>"Failed to load data"</p>
-                    <button on:click={move |_| api_resource.refetch()}>"Try Again"</button>
-                </div>
-            ) else
+            {when!(api_resource.status().get() == ResourceStatus::Resolved =>
                 <div>{api_resource.get().unwrap_or_default()}</div>
+            else
+                <div>
+                    <p>"Fetch is not resolved yet"</p>
+                    <button on:click={move |_| api_resource.retry()}>"Try Again"</button>
+                </div>
             )}
         </div>
     }
 }"#}
                 />
 
-                <h2 class="font-bold uppercase">Reactive Dependencies</h2>
+                <h2 id="reactive-dependencies" class="font-bold tracking-tight">Reactive Dependencies</h2>
                 <CodeBlock
                     language="rust"
                     filename="src/main.rs"
                     highlight=""
-                    code={r#"#[component]
+                    code={r#"use momenta::signals::{create_resource, ResourceStatus};
+
+#[component]
 fn ReactiveResource() -> Node {
     let user_id = create_signal(1);
 
-    // Resource automatically refetches when user_id changes
     let user_profile = create_resource(move || {
         let id = user_id.get();
         async move {
@@ -1303,60 +1280,75 @@ fn ReactiveResource() -> Node {
                 <option value="3">"User 3"</option>
             </select>
 
-            {when!(user_profile.loading() =>
-                <div>"Loading profile..."</div>
-            else
+            {when!(user_profile.status().get() == ResourceStatus::Resolved =>
                 <div>{user_profile.get().unwrap_or_default()}</div>
+            else
+                <div>"Loading profile..."</div>
             )}
         </div>
     }
 }"#}
                 />
 
-                <h2 class="font-bold uppercase">Combining with Effects</h2>
+                <h2 id="reading-without-cloning" class="font-bold tracking-tight">Reading Without Cloning</h2>
                 <CodeBlock
                     language="rust"
                     filename="src/main.rs"
                     highlight=""
-                    code={r#"#[component]
+                    code={r#"use momenta::signals::create_resource;
+
+let stories = create_resource(|| async {
+    fetch_stories().await
+});
+
+let story_count = stories.with(|items| items.len()).unwrap_or(0);"#}
+                />
+
+                <h2 id="combining-with-effects" class="font-bold tracking-tight">Combining with Effects</h2>
+                <CodeBlock
+                    language="rust"
+                    filename="src/main.rs"
+                    highlight=""
+                    code={r#"use momenta::signals::{create_resource, ResourceStatus};
+
+#[component]
 fn ResourceWithEffects() -> Node {
     let data_resource = create_resource(|| async {
         fetch_important_data().await
     });
 
-    // React to resource state changes
     create_effect(move || {
-        if let Some(data) = data_resource.get() {
-            // Process successful data
-            log!("Data loaded successfully: {}", data);
-        }
-
-        if let Some(error) = data_resource.error() {
-            // Handle errors
-            log!("Error occurred: {}", error);
+        match data_resource.status().get() {
+            ResourceStatus::Resolved => {
+                let data = data_resource.get().unwrap_or_default();
+                log!("Data loaded successfully: {}", data);
+            }
+            ResourceStatus::Idle | ResourceStatus::Pending | ResourceStatus::Loading => {
+                log!("Waiting for resource to resolve");
+            }
         }
     });
 
     rsx! {
         <div>
-            {when!(data_resource.loading() =>
-                <div>"Processing..."</div>
-            else
+            {when!(data_resource.status().get() == ResourceStatus::Resolved =>
                 <div>{data_resource.get().unwrap_or_default()}</div>
+            else
+                <div>"Processing..."</div>
             )}
         </div>
     }
 }"#}
                 />
 
-                <h2 class="font-bold uppercase">Best Practices</h2>
+                <h2 id="best-practices" class="font-bold tracking-tight">Best Practices</h2>
                 <ul>
                     <li>"Use create_resource for any asynchronous data loading"</li>
-                    <li>"Resources automatically handle loading, error, and success states"</li>
-                    <li>"Use refetch() method to retry failed requests"</li>
+                    <li>"Render from status() when you need explicit loading state transitions"</li>
+                    <li>"Use retry() to move a resource back to Pending and run the fetcher again"</li>
                     <li>"Resources automatically re-run when their dependencies change"</li>
-                    <li>"Combine resources with effects for complex state management"</li>
-                    <li>"Use conditional rendering with when! for different resource states"</li>
+                    <li>"Use with() when you want to read resolved data without cloning it"</li>
+                    <li>"Combine resources with effects when status transitions need side effects"</li>
                 </ul>
 
                 <Note variant="tip">
@@ -1373,52 +1365,100 @@ fn ResourceWithEffects() -> Node {
 #[component]
 fn PhilosophyPage() -> Node {
     rsx! {
-        <article class="mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8">
-            <header class="mb-12">
-                <h1 class="text-4xl font-bold text-gray-900 dark:text-gray-100">Philosophy</h1>
-                <p class="mt-4 text-lg text-gray-600 dark:text-gray-400">
-                    "Understanding the principles and design decisions behind Momenta."
-                </p>
-            </header>
+        <article class="px-6 py-10 sm:px-8 lg:px-10 xl:pr-8 2xl:pr-10 fade-in">
+            <DocPageHeader
+                title="Philosophy"
+                summary="Momenta is built around explicit reactivity, direct DOM updates, and Rust-native ergonomics. The goal is not to imitate JavaScript frameworks in Rust, but to make reactive UI programming feel natural inside Rust’s constraints and strengths."
+                chips={vec!["explicit primitives", "direct updates", "Rust-first design"]}
+                stats={vec![
+                    ("Rendering", "Update the exact DOM nodes that depend on changed data"),
+                    ("State", "Represent change with signals and derived values"),
+                    ("Tradeoff", "A little more explicitness for much clearer runtime behavior"),
+                ]}
+            />
 
-            <section class="prose prose-gray dark:prose-invert max-w-none">
-                <h2 class="font-bold uppercase">Core Principles</h2>
-
-                <h3>1. Element-Level Reactivity</h3>
+            <section class="prose prose-neutral dark:prose-invert max-w-none prose-headings:tracking-tight prose-p:leading-relaxed prose-a:text-primary prose-a:no-underline hover:prose-a:underline">
+                <h2 id="mental-model" class="font-bold tracking-tight">Mental Model</h2>
                 <p>
-                    "Momenta uses element-level reactivity, which means only the specific parts of your UI that depend on
-                    changed data will be updated. This is more efficient than virtual DOM diffing and provides consistent performance."
+                    "Think of Momenta as a system that remembers which rendered values depend on which signals. A read creates a dependency, and a write only re-runs the bindings or computations attached to that dependency."
+                </p>
+                <ol>
+                    <li>
+                        <strong>Read.</strong>
+                        " A signal is used inside RSX, a computed value, or an effect."
+                    </li>
+                    <li>
+                        <strong>Track.</strong>
+                        " Momenta records that dependency instead of waiting to diff an entire view later."
+                    </li>
+                    <li>
+                        <strong>Update.</strong>
+                        " When the signal changes, only the affected bindings are notified."
+                    </li>
+                </ol>
+
+                <h2 id="core-principles" class="font-bold tracking-tight">Core Principles</h2>
+                <p>
+                    "The philosophy is straightforward: make updates precise, keep the reactive model explicit, and let Rust stay visible instead of wrapping it in framework magic."
+                </p>
+                <ol>
+                    <li>
+                        <strong>Element-level reactivity.</strong>
+                        " Update the exact DOM bindings that depend on changed state instead of re-running unrelated view code."
+                    </li>
+                    <li>
+                        <strong>Rust-first design.</strong>
+                        " Lean on Rust’s ownership model, traits, and macros instead of hiding them behind a JavaScript-style abstraction layer."
+                    </li>
+                    <li>
+                        <strong>Explicit primitives.</strong>
+                        " Signals, computed values, effects, and resources are separate tools with clear jobs, which keeps data flow easier to reason about."
+                    </li>
+                    <li>
+                        <strong>Composition over configuration.</strong>
+                        " Build larger behavior from small primitives instead of depending on convention-heavy framework features."
+                    </li>
+                </ol>
+
+                <h2 id="why-not-virtual-dom" class="font-bold tracking-tight">Why Not Virtual DOM?</h2>
+                <p>
+                    "Virtual DOM solves the problem of coordinating large re-renders. Momenta takes a different route: track dependencies as they are read, then update only the exact outputs that depend on changed data."
                 </p>
 
-                <h3>2. Rust-First Design</h3>
+                <div class="theory-panel not-prose my-8">
+                    <div class="grid gap-3 md:grid-cols-2">
+                        <div class="rounded-xl border border-border/60 bg-background/80 px-3.5 py-3">
+                            <div class="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">What Momenta gains</div>
+                            <p class="mt-1.5 text-[13px] leading-5 text-muted-foreground">"No full component diff pass, less incidental work, and runtime behavior that is easier to predict when state changes."</p>
+                        </div>
+                        <div class="rounded-xl border border-border/60 bg-background/80 px-3.5 py-3">
+                            <div class="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">What Momenta asks from you</div>
+                            <p class="mt-1.5 text-[13px] leading-5 text-muted-foreground">"You model state more deliberately and choose whether something should be source state, derived state, or an effect."</p>
+                        </div>
+                    </div>
+                </div>
+
+                <h2 id="framework-comparison" class="font-bold tracking-tight">Comparison with Other Frameworks</h2>
                 <p>
-                    "Rather than porting concepts from JavaScript frameworks, Momenta embraces Rust's ownership model and
-                    type system. This leads to better performance and fewer runtime errors."
+                    "Momenta is closer to fine-grained reactive systems like Solid than to component re-render models like React. The key difference is that it applies that model directly in Rust, with macros and types that fit the language instead of mimicking JavaScript framework APIs."
                 </p>
 
-                <h3>3. Explicit Reactivity</h3>
-                <p>
-                    "Reactivity is explicit in Momenta. You explicitly create signals, effects, and resources. This makes
-                    the reactive system predictable and debuggable."
-                </p>
-
-                <h3>4. Composability Over Configuration</h3>
-                <p>
-                    "Momenta provides primitive building blocks that can be composed to create complex applications.
-                    There's no magic configuration or conventions - just composable primitives."
-                </p>
-
-                <h2 class="font-bold uppercase">Why Not Virtual DOM?</h2>
-                <p>
-                    "Virtual DOM was designed to solve a specific problem: making imperative DOM updates manageable.
-                    However, with element-level reactivity, we can track exactly what changed and update the DOM directly."
-                </p>
-
-                <h2 class="font-bold uppercase">Comparison with Other Frameworks</h2>
-                <p>
-                    "Momenta draws inspiration from SolidJS's reactivity model but implements it in Rust with zero-cost
-                    abstractions. Unlike React, there are no re-renders or reconciliation phases."
-                </p>
+                <div class="theory-panel not-prose my-8">
+                    <div class="grid gap-4 md:grid-cols-3">
+                        <div class="rounded-xl border border-border/60 bg-background/80 px-3.5 py-3">
+                            <div class="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">React-style model</div>
+                            <p class="mt-1.5 text-[13px] leading-5 text-muted-foreground">"Re-run component logic, produce a new tree, reconcile, then commit changes."</p>
+                        </div>
+                        <div class="rounded-xl border border-border/60 bg-background/80 px-3.5 py-3">
+                            <div class="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Momenta model</div>
+                            <p class="mt-1.5 text-[13px] leading-5 text-muted-foreground">"Track reads once, then send updates directly to the exact bindings that changed."</p>
+                        </div>
+                        <div class="rounded-xl border border-border/60 bg-background/80 px-3.5 py-3">
+                            <div class="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Practical outcome</div>
+                            <p class="mt-1.5 text-[13px] leading-5 text-muted-foreground">"Less incidental work, fewer rendering phases to reason about, and a tighter fit with Rust’s explicit style."</p>
+                        </div>
+                    </div>
+                </div>
 
                 <Note variant="tip">
                     <p>
@@ -1434,19 +1474,54 @@ fn PhilosophyPage() -> Node {
 #[component]
 fn RsxPage() -> Node {
     rsx! {
-        <article class="mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8">
-            <header class="mb-12">
-                <h1 class="text-4xl font-bold text-gray-900 dark:text-gray-100">rsx!</h1>
-                <p class="mt-4 text-lg text-gray-600 dark:text-gray-400">
-                    rsx! is a built in macro that allows you to write HTML-like syntax inside Rust code.
-                    "It's a way to declaratively describe the structure of your UI."
-                </p>
-            </header>
-            <section class="prose prose-gray dark:prose-invert max-w-none">
+        <article class="px-6 py-10 sm:px-8 lg:px-10 xl:pr-8 2xl:pr-10 fade-in">
+            <DocPageHeader
+                title="rsx!"
+                summary="The rsx! macro is Momenta’s declarative view language. It lets you describe structure, bind reactive values, and compose components while still staying firmly inside Rust’s type system and macro model."
+                chips={vec!["HTML-like syntax", "typed attributes", "reactive children"]}
+                stats={vec![
+                    ("Purpose", "Describe UI structure declaratively"),
+                    ("Compiles to", "A tree of lightweight Momenta nodes"),
+                    ("Best used with", "Signals, components, and control-flow macros"),
+                ]}
+            />
+            <section class="prose prose-neutral dark:prose-invert max-w-none prose-headings:tracking-tight prose-p:leading-relaxed prose-a:text-primary prose-a:no-underline hover:prose-a:underline">
                 <h2 id="introduction">Introduction</h2>
                 <p>
                     "RSX allows you to write HTML-like syntax inside Rust code. It's a way to declaratively describe the structure of your UI."
                 </p>
+
+                <div class="doc-grid my-8">
+                    <TheoryCard icon="fas fa-sitemap" title="Think in structure first">
+                        <p>
+                            "Use rsx! to express what the UI should look like when given the current state. Keep business rules outside the markup, then feed the result into a small, readable view tree."
+                        </p>
+                    </TheoryCard>
+                    <TheoryCard icon="fas fa-arrow-right-arrow-left" title="Bindings stay local and explicit">
+                        <p>
+                            "Values become dynamic only where you interpolate them. That locality is important: it keeps reactive reads obvious and makes it easier to see why a specific text node or attribute updates."
+                        </p>
+                    </TheoryCard>
+                </div>
+
+                <div class="theory-panel not-prose my-8">
+                    <div class="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">How to read RSX</div>
+                    <h2 class="mt-3 text-2xl font-bold tracking-tight">A compact mental model</h2>
+                    <div class="mt-4 grid gap-3 md:grid-cols-3">
+                        <div class="rounded-2xl border border-border/60 bg-background/80 px-4 py-4">
+                            <div class="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Static parts</div>
+                            <p class="mt-2 text-sm leading-6 text-muted-foreground">"Literal tags, text, and attributes compile to fixed node structure."</p>
+                        </div>
+                        <div class="rounded-2xl border border-border/60 bg-background/80 px-4 py-4">
+                            <div class="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Dynamic parts</div>
+                            <p class="mt-2 text-sm leading-6 text-muted-foreground">"Interpolations, conditional blocks, and mapped lists establish reactive bindings."</p>
+                        </div>
+                        <div class="rounded-2xl border border-border/60 bg-background/80 px-4 py-4">
+                            <div class="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Composition</div>
+                            <p class="mt-2 text-sm leading-6 text-muted-foreground">"Components are just more nodes, so rsx! stays consistent as your UI grows."</p>
+                        </div>
+                    </div>
+                </div>
                 <h2 id="basic-example">Basic Example</h2>
                 <CodeBlock
                     language="rust"
@@ -1582,7 +1657,7 @@ let elements = rsx! {
 };"#}
                 />
 
-                <h2 class="font-bold uppercase">Best Practices</h2>
+                <h2 class="font-bold tracking-tight">Best Practices</h2>
                 <ul>
                     <li>"Prefer quoted text nodes for predictable RSX output"</li>
                     <li>"Use underscores for hyphenated attribute names like data_id"</li>
@@ -1593,11 +1668,11 @@ let elements = rsx! {
                     <li>"Use direct .map() closures for rendering lists"</li>
                 </ul>
 
-                <div class="mt-12 flex items-center justify-between border-t border-gray-200 dark:border-gray-800 pt-6">
-                    <a href="#" class="text-sm text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200">
-                        "← Getting Started"
+                <div class="mt-16 flex items-center justify-between border-t border-border pt-8">
+                    <a href="#/philosophy" class="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                        "← Philosophy"
                     </a>
-                    <a href="#" class="text-sm text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200">
+                    <a href="#/signals" class="text-sm text-muted-foreground hover:text-foreground transition-colors">
                         "Signals →"
                     </a>
                 </div>
@@ -1609,18 +1684,34 @@ let elements = rsx! {
 #[component]
 pub fn EffectsPage() -> Node {
     rsx! {
-        <article class="mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8">
-            <header class="mb-12">
-                <h1 class="text-4xl font-bold text-gray-900 dark:text-gray-100">Effects</h1>
-                <p class="mt-4 text-lg text-gray-600 dark:text-gray-400">
-                    "Effects are the building blocks of reactivity in Momenta. They run code in response to changes in signals."
-                </p>
-            </header>
-            <section class="prose prose-gray dark:prose-invert max-w-none">
+        <article class="px-6 py-10 sm:px-8 lg:px-10 xl:pr-8 2xl:pr-10 fade-in">
+            <DocPageHeader
+                title="Effects"
+                summary="Effects connect Momenta’s reactive graph to the outside world. Use them to synchronize logging, timers, DOM APIs, and subscriptions with signal changes, while keeping pure derivation in computed values instead."
+                chips={vec!["tracked dependencies", "cleanup", "side-effect boundaries"]}
+                stats={vec![
+                    ("Use for", "Imperative work that must follow reactive state"),
+                    ("Avoid for", "Derived values that could stay pure and computed"),
+                    ("Key rule", "Clean up anything you create outside the reactive graph"),
+                ]}
+            />
+            <section class="prose prose-neutral dark:prose-invert max-w-none prose-headings:tracking-tight prose-p:leading-relaxed prose-a:text-primary prose-a:no-underline hover:prose-a:underline">
                 <h2 id="introduction">Introduction</h2>
                 <p>
                     "Effects are functions that run when their dependencies change. They are the building blocks of reactivity in Momenta. Effects automatically track any signals accessed during their execution and re-run when those signals change."
                 </p>
+                <div class="doc-grid my-8">
+                    <TheoryCard icon="fas fa-plug" title="Effects are integration points">
+                        <p>
+                            "An effect is where declarative state meets imperative APIs. That includes console logging, timers, browser listeners, subscriptions, and any bridge to code that Momenta does not own."
+                        </p>
+                    </TheoryCard>
+                    <TheoryCard icon="fas fa-ban" title="Do not use effects as extra state containers">
+                        <p>
+                            "If you are writing an effect only to keep another value in sync, you likely want a computed signal instead. Effects are for performing work, not modeling relationships between values."
+                        </p>
+                    </TheoryCard>
+                </div>
                 <h2 id="basic-example">Basic Example</h2>
                 <CodeBlock
                     language="rust"
@@ -1669,7 +1760,7 @@ create_effect(move || {
     log!("Result: {}", result);
 });"#}
                 />
-                <h2 class="font-bold uppercase">Advanced Patterns</h2>
+                <h2 class="font-bold tracking-tight">Advanced Patterns</h2>
                 <h3>Effect Dependencies</h3>
                 <p>"Effects can depend on multiple signals, and they will only run when any of their dependencies change:"</p>
                 <CodeBlock
@@ -1690,6 +1781,73 @@ create_effect(move || {
 first_name.set("Jane".to_string()); // Effect runs
 last_name.set("Smith".to_string()); // Effect runs again"#}
                 />
+
+                <h3>Effects with Cleanup</h3>
+                <p>"Use create_effect_with_cleanup when your effect sets up resources that need teardown (intervals, listeners, subscriptions):"</p>
+                <CodeBlock
+                    language="rust"
+                    filename="src/main.rs"
+                    highlight=""
+                    code={r#"use momenta::prelude::*;
+
+let is_polling = create_signal(true);
+
+create_effect_with_cleanup(move || {
+    if is_polling.get() {
+        // Set up a polling interval
+        let interval_id = set_interval(|| {
+            log!("Polling for updates...");
+        }, 5000);
+
+        // Return a cleanup function — called before next run
+        // or when the effect is destroyed
+        move || {
+            clear_interval(interval_id);
+        }
+    } else {
+        // No cleanup needed
+        || {}
+    }
+});"#}
+                />
+
+                <Note variant="warning">
+                    <p>
+                        <strong>"Important:"</strong> " Always use create_effect_with_cleanup when your effect creates timers, event listeners, or WebSocket connections. The cleanup function prevents resource leaks."
+                    </p>
+                </Note>
+
+                <h3>Batch Updates</h3>
+                <p>"When updating multiple signals at once, wrap them in batch() to trigger only a single re-render:"</p>
+                <CodeBlock
+                    language="rust"
+                    filename="src/main.rs"
+                    highlight=""
+                    code={r#"use momenta::prelude::*;
+
+let count = create_signal(0);
+let name = create_signal("hello".to_string());
+let items = create_signal(vec![1, 2, 3]);
+
+// Without batch: each .set() triggers a re-render (3 renders)
+count.set(1);
+name.set("world".to_string());
+items.push(4);
+
+// With batch: all updates applied, then a single re-render
+batch(|| {
+    count.set(1);
+    name.set("world".to_string());
+    items.push(4);
+}); // Single re-render happens here"#}
+                />
+
+                <Note variant="tip">
+                    <p>
+                        <strong>"Performance:"</strong> " Use batch() in event handlers that update multiple signals. This avoids intermediate renders and improves performance."
+                    </p>
+                </Note>
+
                 <h3>Effect Ordering</h3>
                 <p>"Effects are executed in the order they are created"</p>
                 <CodeBlock
@@ -1711,7 +1869,7 @@ create_effect(move || {
 // Effect 1: 1
 // Effect 2: 1"#}
                 />
-                <h2 class="font-bold uppercase">Best Practices</h2>
+                <h2 class="font-bold tracking-tight">Best Practices</h2>
                 <ul>
                     <li>"Keep effects as lightweight as possible"</li>
                     <li>"Avoid creating effects inside loops or other complex logic"</li>
@@ -1719,11 +1877,11 @@ create_effect(move || {
                     <li>"Don't modify signals that you're tracking in the same effect to avoid infinite loops"</li>
                     <li>"Group related effects together for better code organization"</li>
                 </ul>
-                <div class="mt-12 flex items-center justify-between border-t border-gray-200 dark:border-gray-800 pt-6">
-                    <a href="#" class="text-sm text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200">
-                        "← Signals"
+                <div class="mt-16 flex items-center justify-between border-t border-border pt-8">
+                    <a href="#/computed-signals" class="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                        "← Computed Signals"
                     </a>
-                    <a href="#" class="text-sm text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200">
+                    <a href="#/resources" class="text-sm text-muted-foreground hover:text-foreground transition-colors">
                         "Resources →"
                     </a>
                 </div>
@@ -1735,20 +1893,65 @@ create_effect(move || {
 #[component]
 fn SignalsPage() -> Node {
     rsx! {
-        <article class="mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8">
-            <header class="mb-12">
-                <h1 class="text-4xl font-bold text-gray-900 dark:text-gray-100">Signals</h1>
-                <p class="mt-4 text-lg text-gray-600 dark:text-gray-400">
-                    "Signals are the most basic reactive primitive in Momenta. They contain values that change over time."
-                </p>
-            </header>
+        <article class="px-6 py-10 sm:px-8 lg:px-10 xl:pr-8 2xl:pr-10 fade-in">
+            <DocPageHeader
+                title="Signals"
+                summary="Signals are Momenta’s source-of-truth state containers. Reading a signal creates a tracked dependency; writing to it invalidates only the computations and DOM bindings that actually depend on that value."
+                chips={vec!["tracked reads", "targeted updates", "typed state"]}
+                stats={vec![
+                    ("Use for", "Mutable state that changes over time"),
+                    ("Read path", "Reads register dependencies automatically"),
+                    ("Write path", "Writes notify only interested dependents"),
+                ]}
+            />
 
-            <section class="prose prose-gray dark:prose-invert max-w-none">
+            <section class="prose prose-neutral dark:prose-invert max-w-none prose-headings:tracking-tight prose-p:leading-relaxed prose-a:text-primary prose-a:no-underline hover:prose-a:underline">
                 <h2 id="introduction">Introduction</h2>
                 <p>
                     "When you create a signal, you get a getter and setter function. The getter tracks any scope it's called in,
                     and the setter triggers updates to any computations that depend on the signal's value."
                 </p>
+
+                <div class="doc-grid my-8">
+                    <TheoryCard icon="fas fa-eye" title="Reads are meaningful">
+                        <p>
+                            "Calling .get() is not just data access. It tells the runtime that the current reactive scope depends on this signal. That is why dependency tracking stays precise."
+                        </p>
+                    </TheoryCard>
+                    <TheoryCard icon="fas fa-pen-to-square" title="Writes should model real change">
+                        <p>
+                            "Use signals for values that genuinely evolve over time. If a value can be derived from other signals, keep it derived instead of storing a duplicate copy."
+                        </p>
+                    </TheoryCard>
+                    <TheoryCard icon="fas fa-layer-group" title="Granularity is a design tool">
+                        <p>
+                            "Splitting state into smaller signals gives Momenta more opportunities to skip work. Prefer several focused signals over one large bucket of unrelated fields when the update patterns differ."
+                        </p>
+                    </TheoryCard>
+                </div>
+
+                <div class="theory-panel not-prose my-8">
+                    <div class="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">Lifecycle</div>
+                    <h2 class="mt-3 text-2xl font-bold tracking-tight">What happens when a signal changes?</h2>
+                    <div class="mt-4 grid gap-3 md:grid-cols-4">
+                        <div class="rounded-2xl border border-border/60 bg-background/80 px-4 py-4">
+                            <div class="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">1. Create</div>
+                            <p class="mt-2 text-sm leading-6 text-muted-foreground">"A signal stores a typed value and starts with no dependents."</p>
+                        </div>
+                        <div class="rounded-2xl border border-border/60 bg-background/80 px-4 py-4">
+                            <div class="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">2. Read</div>
+                            <p class="mt-2 text-sm leading-6 text-muted-foreground">"Reactive scopes that call .get() register themselves as dependents."</p>
+                        </div>
+                        <div class="rounded-2xl border border-border/60 bg-background/80 px-4 py-4">
+                            <div class="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">3. Write</div>
+                            <p class="mt-2 text-sm leading-6 text-muted-foreground">"Calling .set() or using an update helper marks those dependents dirty."</p>
+                        </div>
+                        <div class="rounded-2xl border border-border/60 bg-background/80 px-4 py-4">
+                            <div class="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">4. Flush</div>
+                            <p class="mt-2 text-sm leading-6 text-muted-foreground">"Momenta re-runs only the necessary computations and patches the exact affected DOM nodes."</p>
+                        </div>
+                    </div>
+                </div>
 
                 <h2 id="basic-example">Basic Example</h2>
                 <CodeBlock
@@ -1848,7 +2051,152 @@ let are_equal = a == b; // true
 "#}
                 />
 
-                <h2 class="font-bold uppercase">Best Practices</h2>
+                <h2 id="operator-overloads">Operator Overloads</h2>
+                <p>"Signals support arithmetic assignment operators for concise updates:"</p>
+                <CodeBlock
+                    language="rust"
+                    filename="src/main.rs"
+                    highlight=""
+                    code={r#"let mut count = create_signal(10);
+
+count += 5;   // count is now 15
+count -= 3;   // count is now 12
+count *= 2;   // count is now 24
+count /= 4;   // count is now 6
+
+// Comparison operators work directly
+let is_big = count > 5;    // true
+let is_exact = count == 6; // true"#}
+                />
+
+                <h2 id="with-method">The .with() Method</h2>
+                <p>"Access the signal value by reference without cloning, useful for expensive-to-clone types:"</p>
+                <CodeBlock
+                    language="rust"
+                    filename="src/main.rs"
+                    highlight=""
+                    code={r#"let items = create_signal(vec![1, 2, 3, 4, 5]);
+
+// Immutable access without cloning the whole Vec
+let length = items.with(|v| v.len()); // Some(5)
+let first = items.with(|v| v.first().cloned()); // Some(Some(1))"#}
+                />
+
+                <h2 id="boolean-signals">Boolean Signal Methods</h2>
+                <p>"Signal&lt;bool&gt; has convenience methods for common operations:"</p>
+                <CodeBlock
+                    language="rust"
+                    filename="src/main.rs"
+                    highlight=""
+                    code={r#"let is_open = create_signal(false);
+
+is_open.toggle();    // flips to true
+is_open.toggle();    // flips back to false
+is_open.turn_on();   // sets to true
+is_open.turn_off();  // sets to false
+
+rsx! {
+    <button on:click={move |_| is_open.toggle()}>
+        {when!(is_open => "Close" else "Open")}
+    </button>
+}"#}
+                />
+
+                <h2 id="then-method">The .then() Method</h2>
+                <p>"Boolean-like signals can run a closure conditionally and return the result as an Option:"</p>
+                <CodeBlock
+                    language="rust"
+                    filename="src/main.rs"
+                    highlight=""
+                    code={r#"let is_logged_in = create_signal(true);
+
+let greeting = is_logged_in.then(|| {
+    "Welcome back".to_string()
+});
+
+assert_eq!(greeting, Some("Welcome back".to_string()));
+
+is_logged_in.set(false);
+assert_eq!(is_logged_in.then(|| "secret area"), None);"#}
+                />
+
+                <h2 id="vec-signals">Vector Signal Methods</h2>
+                <p>"Signal&lt;Vec&lt;T&gt;&gt; provides familiar collection methods that automatically trigger updates:"</p>
+                <CodeBlock
+                    language="rust"
+                    filename="src/main.rs"
+                    highlight=""
+                    code={r#"let items = create_signal(vec!["apple", "banana"]);
+
+// Mutating methods
+items.push("cherry");          // append
+items.insert(0, "avocado");    // insert at index
+items.remove(1);               // remove by index
+let last = items.pop();        // remove and return last
+
+// Filtering
+items.retain(|item| item.starts_with('a'));
+
+// Querying
+let count = items.len();        // length
+let empty = items.is_empty();   // check empty
+let first = items.get_at(0);    // get by index
+
+// Updating
+items.update_at(0, "apricot");  // update by index
+items.clear();                  // remove all
+
+// Sorting (requires T: Ord)
+let numbers = create_signal(vec![3, 1, 2]);
+numbers.sort();                  // [1, 2, 3]
+numbers.reverse();               // [3, 2, 1]
+numbers.sort_by_key(|n| -n);    // sort descending
+
+// Iteration and mapping
+let doubled = numbers.map(|n| n * 2);  // Vec<i32>
+
+rsx! {
+    <ul>
+        {items.map(|item| rsx! { <li>{item}</li> })}
+    </ul>
+}"#}
+                />
+
+                <h2 id="signal-value">Custom Types with SignalValue</h2>
+                <p>"To store custom types in signals, derive the SignalValue trait:"</p>
+                <CodeBlock
+                    language="rust"
+                    filename="src/main.rs"
+                    highlight=""
+                    code={r#"use momenta::prelude::*;
+
+#[derive(Clone, PartialEq, SignalValue)]
+struct User {
+    name: String,
+    age: u32,
+}
+
+let user = create_signal(User {
+    name: "Alice".to_string(),
+    age: 30,
+});
+
+// Access fields via .with()
+let name = user.with(|u| u.name.clone());
+
+// Update the whole value
+user.set(User {
+    name: "Bob".to_string(),
+    age: 25,
+});"#}
+                />
+                <Note variant="info">
+                    <p>
+                        <strong>"Built-in support:"</strong> " SignalValue is already implemented for all numeric types, bool, char, String, &'static str, Vec&lt;T&gt;, and Option&lt;T&gt;."
+                    </p>
+                </Note>
+
+                <h2 class="font-bold tracking-tight">Best Practices</h2>
                 <ul>
                     <li>"Keep signals at the appropriate scope - not everything needs to be global state"</li>
                     <li>"Prefer fine-grained signals over large state objects for better performance"</li>
@@ -1857,12 +2205,12 @@ let are_equal = a == b; // true
                     <li>"Consider using custom signal types for domain-specific state management"</li>
                 </ul>
 
-                <div class="mt-12 flex items-center justify-between border-t border-gray-200 dark:border-gray-800 pt-6">
-                    <a href="#" class="text-sm text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200">
-                        "← Getting Started"
+                <div class="mt-16 flex items-center justify-between border-t border-border pt-8">
+                    <a href="#/rsx" class="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                        "← rsx!"
                     </a>
-                    <a href="#" class="text-sm text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200">
-                        "Effects →"
+                    <a href="#/computed-signals" class="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                        "Computed Signals →"
                     </a>
                 </div>
             </section>
@@ -1874,17 +2222,81 @@ let are_equal = a == b; // true
 #[component]
 fn GettingStartedPage() -> Node {
     rsx! {
-        <article class="mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8">
-            <header class="mb-12">
-                <h1 class="text-4xl font-bold text-gray-900 dark:text-gray-100">Getting Started</h1>
-                <p class="mt-4 text-lg text-gray-600 dark:text-gray-400">
-                    "Get up and running with Momenta in minutes."
-                </p>
-            </header>
+        <article class="px-6 py-10 sm:px-8 lg:px-10 xl:pr-8 2xl:pr-10 fade-in">
+            <DocPageHeader
+                title="Getting Started"
+                summary="Set up the toolchain, mount your first component, and understand the three moving parts behind every Momenta app: RSX for structure, signals for state, and the runtime for precise DOM updates."
+                chips={vec!["Trunk", "WASM target", "mount_to_body"]}
+                stats={vec![
+                    ("Build tool", "Trunk handles WASM, assets, and dev-server reloads"),
+                    ("Core loop", "State changes flow from signals into RSX bindings"),
+                    ("Outcome", "A small Rust app running directly in the browser"),
+                ]}
+            />
 
-            <section class="prose prose-gray dark:prose-invert max-w-none">
-                <h2 class="font-bold uppercase">Installation</h2>
-                <p>"Add Momenta to your " <code>"Cargo.toml"</code> ":"</p>
+            <section class="prose prose-neutral dark:prose-invert max-w-none prose-headings:tracking-tight prose-p:leading-relaxed prose-a:text-primary prose-a:no-underline hover:prose-a:underline">
+                <div class="doc-grid my-8">
+                    <TheoryCard icon="fas fa-diagram-project" title="What you are wiring together">
+                        <p>
+                            "A Momenta app is just a Rust binary that renders a component tree into the browser. The rsx! macro defines the shape of that tree, signals hold changeable data, and the runtime keeps the DOM synchronized."
+                        </p>
+                    </TheoryCard>
+                    <TheoryCard icon="fas fa-flag-checkered" title="What you should understand by the end">
+                        <p>
+                            "After this page, you should be able to bootstrap a project, identify where reactive state lives, and know where to go next for syntax, component structure, and reactive primitives."
+                        </p>
+                    </TheoryCard>
+                </div>
+
+                <div class="theory-panel not-prose my-8">
+                    <div class="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">Before You Code</div>
+                    <h2 class="mt-2.5 text-xl font-bold tracking-tight">The shortest useful mental model</h2>
+                    <div class="mt-3 grid gap-2.5 md:grid-cols-3">
+                        <div class="rounded-xl border border-border/60 bg-background/80 px-3.5 py-3">
+                            <div class="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">1. Build</div>
+                            <p class="mt-1.5 text-[13px] leading-5 text-muted-foreground">"Trunk compiles your Rust crate to WebAssembly and serves the generated assets."</p>
+                        </div>
+                        <div class="rounded-xl border border-border/60 bg-background/80 px-3.5 py-3">
+                            <div class="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">2. Mount</div>
+                            <p class="mt-1.5 text-[13px] leading-5 text-muted-foreground">"mount_to_body::<App>() boots the root component and attaches it to the document."</p>
+                        </div>
+                        <div class="rounded-xl border border-border/60 bg-background/80 px-3.5 py-3">
+                            <div class="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">3. React</div>
+                            <p class="mt-1.5 text-[13px] leading-5 text-muted-foreground">"Signal writes trigger precise updates, so the browser only changes what the user can actually see."</p>
+                        </div>
+                    </div>
+                </div>
+
+                <h2 id="prerequisites" class="font-bold tracking-tight">Prerequisites</h2>
+                <p>"Before getting started, make sure you have Rust and the WebAssembly target installed:"</p>
+                <CodeBlock
+                    filename="terminal"
+                    highlight=""
+                    language="bash"
+                    code={r#"# Install Rust (if not already installed)
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+# Add the WebAssembly compilation target
+rustup target add wasm32-unknown-unknown
+
+# Install Trunk (the recommended build tool)
+cargo install trunk"#}
+                />
+                <Note variant="info">
+                    <p>
+                        <strong>"Trunk"</strong> " is the recommended build tool for Momenta. It handles WASM compilation, asset bundling, and live reloading during development."
+                    </p>
+                </Note>
+
+                <h2 id="installation" class="font-bold tracking-tight">Installation</h2>
+                <p>"Create a new Rust project and add Momenta to your " <code>"Cargo.toml"</code> ":"</p>
+                <CodeBlock
+                    filename="terminal"
+                    highlight=""
+                    language="bash"
+                    code={r#"cargo new my-app
+    cd my-app"#}
+                />
                 <CodeBlock
                     filename="Cargo.toml"
                     highlight=""
@@ -1898,7 +2310,27 @@ version = "0.3"
 features = ["Document", "Element", "HtmlElement"]"#}
                 />
 
-                <h2 class="font-bold uppercase">Your First Component</h2>
+                <h2 id="create-index-html" class="font-bold tracking-tight">Create index.html</h2>
+                <p>"Trunk needs an index.html entry point. Create one at your project root:"</p>
+                <CodeBlock
+                    filename="index.html"
+                    highlight=""
+                    language="html"
+                    code={r#"<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>My Momenta App</title>
+    <link data-trunk rel="rust" />
+  </head>
+  <body>
+    <div id="app"></div>
+  </body>
+</html>"#}
+                />
+
+                <h2 id="first-component" class="font-bold tracking-tight">Your First Component</h2>
                 <CodeBlock
                     filename="src/main.rs"
                     highlight=""
@@ -1927,7 +2359,7 @@ fn main() {
 }"#}
                 />
 
-                <h2 class="font-bold uppercase">Project Structure</h2>
+                <h2 id="project-structure" class="font-bold tracking-tight">Project Structure</h2>
                 <p>"A typical Momenta project structure looks like this:"</p>
                 <CodeBlock
                     language="text"
@@ -1955,6 +2387,40 @@ fn main() {
                         <strong>"Tip:"</strong> add a <code>"static"</code> folder to your project to serve static files like images, CSS, and JavaScript.
                     </p>
                 </Note>
+
+                <h2 id="run-your-app" class="font-bold tracking-tight">Run Your App</h2>
+                <p>"Start the development server with live reloading:"</p>
+                <CodeBlock
+                    filename="terminal"
+                    highlight=""
+                    language="bash"
+                    code={r#"# Start the dev server with live reload
+trunk serve
+
+# Or build for production
+trunk build --release"#}
+                />
+                <p>"Open " <code>"http://localhost:8080"</code> " in your browser. Trunk will automatically recompile and reload when you save changes."</p>
+
+                <h2 id="next-steps" class="font-bold tracking-tight">Next Steps</h2>
+                <div class="grid gap-3 sm:grid-cols-2 not-prose">
+                    <a href="#/rsx" class="card-link group">
+                        <h3 class="text-sm font-medium group-hover:text-primary transition-colors">RSX Syntax</h3>
+                        <p class="text-xs text-muted-foreground mt-0.5">Learn the JSX-like template syntax.</p>
+                    </a>
+                    <a href="#/signals" class="card-link group">
+                        <h3 class="text-sm font-medium group-hover:text-primary transition-colors">Signals</h3>
+                        <p class="text-xs text-muted-foreground mt-0.5">Understand reactive state management.</p>
+                    </a>
+                    <a href="#/components" class="card-link group">
+                        <h3 class="text-sm font-medium group-hover:text-primary transition-colors">Components</h3>
+                        <p class="text-xs text-muted-foreground mt-0.5">Build reusable UI components.</p>
+                    </a>
+                    <a href="#/examples" class="card-link group">
+                        <h3 class="text-sm font-medium group-hover:text-primary transition-colors">Examples</h3>
+                        <p class="text-xs text-muted-foreground mt-0.5">See complete example applications.</p>
+                    </a>
+                </div>
             </section>
         </article>
     }
@@ -1963,22 +2429,58 @@ fn main() {
 #[component]
 fn ComponentsPage() -> Node {
     rsx! {
-        <article class="mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8">
-            <header class="mb-12">
-                <h1 class="text-4xl font-bold text-gray-900 dark:text-gray-100">Components</h1>
-                <p class="mt-4 text-lg text-gray-600 dark:text-gray-400">
-                    "Components are reusable pieces of UI logic marked with the #[component] attribute."
-                </p>
-            </header>
+        <article class="mx-auto max-w-6xl px-6 py-10 sm:px-8 lg:px-10 fade-in">
+            <DocPageHeader
+                title="Components"
+                summary="Components package structure, state, and behavior into reusable boundaries. In Momenta, a component is just a Rust function that returns a Node, so the abstraction stays lightweight and familiar."
+                chips={vec!["#[component]", "props", "children"]}
+                stats={vec![
+                    ("Abstraction", "A function-based boundary around UI and reactive logic"),
+                    ("Data flow", "Props come in, local signals stay inside, children compose downward"),
+                    ("Goal", "Keep features understandable by splitting them into focused units"),
+                ]}
+            />
 
-            <section class="prose prose-gray dark:prose-invert max-w-none">
-                <h2 class="font-bold uppercase">Introduction</h2>
+            <section class="prose prose-neutral dark:prose-invert max-w-none prose-headings:tracking-tight prose-p:leading-relaxed prose-a:text-primary prose-a:no-underline hover:prose-a:underline">
+                <h2 id="introduction" class="font-bold tracking-tight">Introduction</h2>
                 <p>
                     "Components in Momenta are functions that return a Node. They can accept props and maintain
                     internal state using signals and other reactive primitives."
                 </p>
 
-                <h2 class="font-bold uppercase">Basic Component</h2>
+                <div class="doc-grid my-8">
+                    <TheoryCard icon="fas fa-border-all" title="A component is a boundary, not a mini framework">
+                        <p>
+                            "Use components to define clear ownership over a piece of UI. A good component owns one concern, receives a small prop surface, and exposes a predictable shape to the rest of the app."
+                        </p>
+                    </TheoryCard>
+                    <TheoryCard icon="fas fa-right-left" title="Separate inputs from local behavior">
+                        <p>
+                            "Props describe what a parent can configure. Signals describe what the component itself needs to track while it runs. Keeping that line clean makes components easier to reuse and test."
+                        </p>
+                    </TheoryCard>
+                </div>
+
+                <div class="theory-panel not-prose my-8">
+                    <div class="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">Heuristic</div>
+                    <h2 class="mt-3 text-2xl font-bold tracking-tight">When should something become a component?</h2>
+                    <div class="mt-4 grid gap-3 md:grid-cols-3">
+                        <div class="rounded-2xl border border-border/60 bg-background/80 px-4 py-4">
+                            <div class="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Reuse</div>
+                            <p class="mt-2 text-sm leading-6 text-muted-foreground">"The same UI pattern appears in multiple places with different data."</p>
+                        </div>
+                        <div class="rounded-2xl border border-border/60 bg-background/80 px-4 py-4">
+                            <div class="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Complexity</div>
+                            <p class="mt-2 text-sm leading-6 text-muted-foreground">"The markup is long enough that it hides the intent of the parent view."</p>
+                        </div>
+                        <div class="rounded-2xl border border-border/60 bg-background/80 px-4 py-4">
+                            <div class="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">State ownership</div>
+                            <p class="mt-2 text-sm leading-6 text-muted-foreground">"A feature needs local reactive state that should not leak into the rest of the tree."</p>
+                        </div>
+                    </div>
+                </div>
+
+                <h2 id="basic-component" class="font-bold tracking-tight">Basic Component</h2>
                 <CodeBlock
                     language="rust"
                     filename="src/components/button.rs"
@@ -2005,7 +2507,7 @@ fn App() -> Node {
 }"#}
                 />
 
-                <h2 class="font-bold uppercase">Components with Props</h2>
+                <h2 id="components-with-props" class="font-bold tracking-tight">Components with Props</h2>
                 <CodeBlock
                     language="rust"
                     filename="src/components/button.rs"
@@ -2050,7 +2552,7 @@ fn App() -> Node {
                     </p>
                 </Note>
 
-                <h2 class="font-bold uppercase">Components with State</h2>
+                <h2 id="components-with-state" class="font-bold tracking-tight">Components with State</h2>
                 <CodeBlock
                     language="rust"
                     filename="src/components/toggle.rs"
@@ -2076,7 +2578,7 @@ fn Toggle() -> Node {
 }"#}
                 />
 
-                <h2 class="font-bold uppercase">Component Composition</h2>
+                <h2 id="component-composition" class="font-bold tracking-tight">Component Composition</h2>
                 <CodeBlock
                     language="rust"
                     filename="src/components/card.rs"
@@ -2113,7 +2615,7 @@ fn App() -> Node {
 }"#}
                 />
 
-                <h2 class="font-bold uppercase">Best Practices</h2>
+                <h2 id="best-practices" class="font-bold tracking-tight">Best Practices</h2>
                 <ul>
                     <li>"Keep components focused on a single responsibility"</li>
                     <li>"Use props for data that changes between instances"</li>
@@ -2136,22 +2638,22 @@ fn App() -> Node {
 #[component]
 fn PerformancePage() -> Node {
     rsx! {
-        <article class="mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8">
-            <header class="mb-12">
-                <h1 class="text-4xl font-bold text-gray-900 dark:text-gray-100">Performance</h1>
-                <p class="mt-4 text-lg text-gray-600 dark:text-gray-400">
+        <article class="px-6 py-10 sm:px-8 lg:px-10 fade-in">
+            <header class="mb-10">
+                <h1 class="text-3xl font-bold tracking-tight sm:text-4xl">Performance</h1>
+                <p class="mt-3 text-lg text-muted-foreground leading-relaxed">
                     "Optimize your Momenta applications for maximum performance and efficiency."
                 </p>
             </header>
 
-            <section class="prose prose-gray dark:prose-invert max-w-none">
-                <h2 class="font-bold uppercase">Introduction</h2>
+            <section class="prose prose-neutral dark:prose-invert max-w-none prose-headings:tracking-tight prose-p:leading-relaxed prose-a:text-primary prose-a:no-underline hover:prose-a:underline">
+                <h2 id="introduction" class="font-bold tracking-tight">Introduction</h2>
                 <p>
                     "Momenta is designed for performance from the ground up. Its fine-grained reactivity system
                     ensures that only the parts of your UI that actually need to update will re-render."
                 </p>
 
-                <h2 class="font-bold uppercase">Signal Optimization</h2>
+                <h2 id="signal-optimization" class="font-bold tracking-tight">Signal Optimization</h2>
                 <h3>Fine-grained Signals</h3>
                 <p>"Use specific signals instead of large state objects for better performance:"</p>
                 <CodeBlock
@@ -2192,7 +2694,7 @@ rsx! {
 }"#}
                 />
 
-                <h2 class="font-bold uppercase">Component Optimization</h2>
+                <h2 id="component-optimization" class="font-bold tracking-tight">Component Optimization</h2>
                 <h3>Component Splitting</h3>
                 <p>"Break large components into smaller ones to minimize re-renders:"</p>
                 <CodeBlock
@@ -2230,7 +2732,7 @@ fn UserInfo() -> Node {
 }"#}
                 />
 
-                <h2 class="font-bold uppercase">List Rendering Performance</h2>
+                <h2 id="list-rendering-performance" class="font-bold tracking-tight">List Rendering Performance</h2>
                 <h3>Efficient List Updates</h3>
                 <CodeBlock
                     language="rust"
@@ -2284,7 +2786,7 @@ fn VirtualizedList() -> Node {
 }"#}
                 />
 
-                <h2 class="font-bold uppercase">Effect Optimization</h2>
+                <h2 id="effect-optimization" class="font-bold tracking-tight">Effect Optimization</h2>
                 <h3>Minimize Effect Dependencies</h3>
                 <CodeBlock
                     language="rust"
@@ -2306,7 +2808,7 @@ create_effect(move || {
 });"#}
                 />
 
-                <h2 class="font-bold uppercase">Memory Management</h2>
+                <h2 id="memory-management" class="font-bold tracking-tight">Memory Management</h2>
                 <h3>Avoid Memory Leaks</h3>
                 <CodeBlock
                     language="rust"
@@ -2331,7 +2833,7 @@ fn CounterComponent() -> Node {
 }"#}
                 />
 
-                <h2 class="font-bold uppercase">Bundle Size Optimization</h2>
+                <h2 id="bundle-size-optimization" class="font-bold tracking-tight">Bundle Size Optimization</h2>
                 <h3>Code Splitting</h3>
                 <CodeBlock
                     language="rust"
@@ -2355,7 +2857,7 @@ default-features = false
 features = [\"web\", \"signals\"]  # Only include what you need"#}
                 />
 
-                <h2 class="font-bold uppercase">Best Practices</h2>
+                <h2 id="best-practices" class="font-bold tracking-tight">Best Practices</h2>
                 <ul>
                     <li>Use fine-grained signals instead of large state objects</li>
                     <li>Prefer closures for derived values over additional signals</li>
@@ -2368,7 +2870,7 @@ features = [\"web\", \"signals\"]  # Only include what you need"#}
                     <li>Only include necessary features to reduce bundle size</li>
                 </ul>
 
-                <h2 class="font-bold uppercase">Performance Monitoring</h2>
+                <h2 id="performance-monitoring" class="font-bold tracking-tight">Performance Monitoring</h2>
                 <CodeBlock
                     language="rust"
                     filename="src/main.rs"
@@ -2388,12 +2890,12 @@ create_effect(move || {
 });"#}
                 />
 
-                <div class="mt-12 flex items-center justify-between border-t border-gray-200 dark:border-gray-800 pt-6">
-                    <a href="#" class="text-sm text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200">
-                        "← Lists"
+                <div class="mt-16 flex items-center justify-between border-t border-border pt-8">
+                    <a href="#/lists" class="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                        "← List Rendering"
                     </a>
-                    <a href="#" class="text-sm text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200">
-                        "Rust Integration →"
+                    <a href="#/deployment" class="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                        "Deployment →"
                     </a>
                 </div>
             </section>
@@ -2404,16 +2906,16 @@ create_effect(move || {
 #[component]
 fn DeploymentPage() -> Node {
     rsx! {
-        <div class="mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8 space-y-8">
+        <div class="px-6 py-10 sm:px-8 lg:px-10 space-y-8 fade-in">
             <div>
                 <h1 class="text-4xl font-bold mb-4">Deployment</h1>
-                <p class="text-lg text-gray-600 mb-8">
+                <p class="text-lg text-muted-foreground mb-8">
                     Deploy your Momenta applications to production.
                 </p>
             </div>
 
             <div>
-                <h2 class="text-2xl font-bold mb-4">Build for Production</h2>
+                <h2 id="build-for-production" class="text-2xl font-bold mb-4">Build for Production</h2>
                 <p class="mb-4">
                     Optimize your build for production deployment.
                 </p>
@@ -2430,7 +2932,7 @@ wasm-bindgen --out-dir pkg --target web target/wasm32-unknown-unknown/release/yo
             </div>
 
             <div>
-                <h2 class="text-2xl font-bold mb-4">Static Hosting</h2>
+                <h2 id="static-hosting" class="text-2xl font-bold mb-4">Static Hosting</h2>
                 <p class="mb-4">
                     Deploy to static hosting platforms like Netlify or Vercel.
                 </p>
@@ -2450,8 +2952,8 @@ wasm-bindgen --out-dir pkg --target web target/wasm32-unknown-unknown/release/yo
             </div>
 
             <div>
-                <h2 class="text-2xl font-bold mb-4">Best Practices</h2>
-                <ul class="list-disc list-inside space-y-2 text-gray-700">
+                <h2 id="best-practices" class="text-2xl font-bold mb-4">Best Practices</h2>
+                <ul class="list-disc list-inside space-y-2 text-muted-foreground">
                     <li>Use release builds for production</li>
                     <li>Enable WASM optimizations</li>
                     <li>Set proper MIME types for .wasm files</li>
@@ -2469,7 +2971,7 @@ fn TodoMVCPage() -> Node {
         <div class="space-y-8">
             <div>
                 <h1 class="text-4xl font-bold mb-4">TodoMVC Example</h1>
-                <p class="text-lg text-gray-600 mb-8">
+                <p class="text-lg text-muted-foreground mb-8">
                     "A complete TodoMVC implementation showcasing Momenta's capabilities."
                 </p>
             </div>
@@ -2527,7 +3029,7 @@ fn AddTodo(todos: Signal<Vec<Todo>>) -> Node {
 
             <div>
                 <h2 class="text-2xl font-bold mb-4">Key Features</h2>
-                <ul class="list-disc list-inside space-y-2 text-gray-700">
+                <ul class="list-disc list-inside space-y-2 text-muted-foreground">
                     <li>Add, edit, and delete todos</li>
                     <li>Mark todos as complete/incomplete</li>
                     <li>Filter todos by status (All, Active, Completed)</li>
@@ -2545,7 +3047,7 @@ fn HackerNewsPage() -> Node {
         <div class="space-y-8">
             <div>
                 <h1 class="text-4xl font-bold mb-4">HackerNews Clone</h1>
-                <p class="text-lg text-gray-600 mb-8">
+                <p class="text-lg text-muted-foreground mb-8">
                     An advanced example showing API integration and real-time updates.
                 </p>
             </div>
@@ -2649,7 +3151,7 @@ async fn fetch_stories() -> Result<Vec<Story>, String> {
 
             <div>
                 <h2 class="text-2xl font-bold mb-4">Features</h2>
-                <ul class="list-disc list-inside space-y-2 text-gray-700">
+                <ul class="list-disc list-inside space-y-2 text-muted-foreground">
                     <li>Real-time story fetching from HackerNews API</li>
                     <li>Infinite scrolling and pagination</li>
                     <li>Story details and comments</li>
@@ -2667,7 +3169,7 @@ fn RealWorldPage() -> Node {
         <div class="space-y-8">
             <div>
                 <h1 class="text-4xl font-bold mb-4">RealWorld App</h1>
-                <p class="text-lg text-gray-600 mb-8">
+                <p class="text-lg text-muted-foreground mb-8">
                     A full-featured blogging platform demonstrating complex state management.
                 </p>
             </div>
@@ -2727,7 +3229,7 @@ fn ArticleEditor() -> Node {
 
             <div>
                 <h2 class="text-2xl font-bold mb-4">Key Features</h2>
-                <ul class="list-disc list-inside space-y-2 text-gray-700">
+                <ul class="list-disc list-inside space-y-2 text-muted-foreground">
                     <li>User authentication and profiles</li>
                     <li>Article creation, editing, and deletion</li>
                     <li>Comments and favorites</li>
@@ -2743,22 +3245,22 @@ fn ArticleEditor() -> Node {
 #[component]
 fn ShowPage() -> Node {
     rsx! {
-        <article class="mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8">
-            <header class="mb-12">
-                <h1 class="text-4xl font-bold text-gray-900 dark:text-gray-100">Conditional Rendering</h1>
-                <p class="mt-4 text-lg text-gray-600 dark:text-gray-400">
+        <article class="px-6 py-10 sm:px-8 lg:px-10 fade-in">
+            <header class="mb-10">
+                <h1 class="text-3xl font-bold tracking-tight sm:text-4xl">Conditional Rendering</h1>
+                <p class="mt-3 text-lg text-muted-foreground leading-relaxed">
                     "Use when! macro for conditional rendering based on reactive values."
                 </p>
             </header>
 
-            <section class="prose prose-gray dark:prose-invert max-w-none">
-                <h2 class="font-bold uppercase">Introduction</h2>
+            <section class="prose prose-neutral dark:prose-invert max-w-none prose-headings:tracking-tight prose-p:leading-relaxed prose-a:text-primary prose-a:no-underline hover:prose-a:underline">
+                <h2 id="introduction" class="font-bold tracking-tight">Introduction</h2>
                 <p>
                     "The when! macro provides a clean way to conditionally render different UI based on
                     reactive values. It's similar to ternary operators but integrates seamlessly with Momenta's reactivity."
                 </p>
 
-                <h2 class="font-bold uppercase">Basic Usage</h2>
+                <h2 id="basic-usage" class="font-bold tracking-tight">Basic Usage</h2>
                 <CodeBlock
                     language="rust"
                     filename="src/main.rs"
@@ -2791,7 +3293,7 @@ fn App() -> Node {
 }"#}
                 />
 
-                <h2 class="font-bold uppercase">Complex Conditions</h2>
+                <h2 id="complex-conditions" class="font-bold tracking-tight">Complex Conditions</h2>
                 <CodeBlock
                     language="rust"
                     filename="src/main.rs"
@@ -2814,7 +3316,7 @@ rsx! {
 }"#}
                 />
 
-                <h2 class="font-bold uppercase">Show Components</h2>
+                <h2 id="show-components" class="font-bold tracking-tight">Show Components</h2>
                 <CodeBlock
                     language="rust"
                     filename="src/main.rs"
@@ -2849,7 +3351,7 @@ rsx! {
 }"#}
                 />
 
-                <h2 class="font-bold uppercase">Advanced Patterns</h2>
+                <h2 id="advanced-patterns" class="font-bold tracking-tight">Advanced Patterns</h2>
 
                 <h3>Loading States</h3>
                 <CodeBlock
@@ -2929,7 +3431,7 @@ rsx! {
 }"#}
                 />
 
-                <h2 class="font-bold uppercase">Best Practices</h2>
+                <h2 id="best-practices" class="font-bold tracking-tight">Best Practices</h2>
                 <ul>
                     <li>"Use when! for simple boolean conditions"</li>
                     <li>"Consider creating Show/Hide components for reusable patterns"</li>
@@ -2947,38 +3449,334 @@ fn CounterExample() -> Node {
     let mut count = create_signal(0);
 
     rsx! {
-        <div class="min-h-full bg-gradient-to-br from-purple-400 to-blue-600 flex items-center justify-center p-4">
-            <div class="bg-white/20 backdrop-blur-lg rounded-3xl p-8 shadow-2xl border border-white/30">
-                <h1 class="text-3xl font-bold text-white mb-6 text-center">
+        <div class="flex items-center justify-center p-6 bg-card">
+            <div class="text-center space-y-6">
+                <h1 class="text-2xl font-bold">
                     "Momenta Counter"
                 </h1>
 
-                <div class="text-6xl font-bold text-center mb-8 transition-all duration-300 text-white">
+                <div class="text-5xl font-bold tabular-nums">
                     {count}
                 </div>
 
-                <div class="flex gap-4 justify-center">
+                <div class="flex gap-3 justify-center">
                     <button
-                        class="px-6 py-3 bg-red-500 hover:bg-red-600 text-white font-semibold rounded-xl transition-all duration-200 transform hover:scale-105 shadow-lg"
+                        class="px-5 py-2 bg-red-500 hover:bg-red-600 text-white font-medium rounded-lg transition-colors"
                         on:click={move |_| count -= 1}
                     >
-                        "− Decrease"
+                        "Decrease"
                     </button>
 
                     <button
-                        class="px-6 py-3 bg-green-500 hover:bg-green-600 text-white font-semibold rounded-xl transition-all duration-200 transform hover:scale-105 shadow-lg"
+                        class="px-5 py-2 bg-green-500 hover:bg-green-600 text-white font-medium rounded-lg transition-colors"
                         on:click={move |_| count += 1}
                     >
-                        "+ Increase"
+                        "Increase"
                     </button>
                 </div>
 
                 <button
-                    class="w-full mt-4 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors"
+                    class="px-4 py-1.5 border border-border rounded-lg text-sm hover:bg-muted transition-colors"
                     on:click={move |_| count.set(0)}
                 >
-                    "Reset Count: " {count}
+                    "Reset"
                 </button>
+            </div>
+        </div>
+    }
+}
+
+// Routing Page
+#[component]
+fn RoutingPage() -> Node {
+    rsx! {
+        <article class="px-6 py-10 sm:px-8 lg:px-10 fade-in">
+            <header class="mb-10">
+                <h1 class="text-3xl font-bold tracking-tight sm:text-4xl">Routing</h1>
+                <p class="mt-3 text-lg text-muted-foreground leading-relaxed">
+                    "Client-side routing for single-page Momenta applications using momenta-router."
+                </p>
+            </header>
+
+            <section class="prose prose-neutral dark:prose-invert max-w-none prose-headings:tracking-tight prose-p:leading-relaxed prose-a:text-primary prose-a:no-underline hover:prose-a:underline">
+                <h2 id="introduction">Introduction</h2>
+                <p>
+                    "The momenta-router crate provides client-side routing with two modes: hash-based and pathname-based.
+                    Routes are declared with the routes! macro and support dynamic parameters."
+                </p>
+
+                <h2 id="setup">Setup</h2>
+                <p>"Add momenta-router to your Cargo.toml:"</p>
+                <CodeBlock
+                    language="toml"
+                    filename="Cargo.toml"
+                    highlight=""
+                    code={r#"[dependencies]
+momenta = "0.2"
+momenta-router = "0.2""#}
+                />
+
+                <h2 id="router-context">RouterContext</h2>
+                <p>"Create a RouterContext to manage navigation state. It provides a reactive signal that updates whenever the route changes."</p>
+                <CodeBlock
+                    language="rust"
+                    filename="src/main.rs"
+                    highlight=""
+                    code={r##"use momenta::prelude::*;
+use momenta_router::{RouterContext, RouterMode, routes};
+
+#[component]
+fn App() -> Node {
+    // Hash-based routing (#/path)
+    let router = RouterContext::new(RouterMode::Hash);
+    let current_path = router.current_path();
+
+    rsx! {
+        <div>
+            <nav>
+                <a href="#/home">"Home"</a>
+                <a href="#/about">"About"</a>
+            </nav>
+            {routes!(router, current_path, {
+                "/home" => |_| rsx! { <HomePage /> },
+                "/about" => |_| rsx! { <AboutPage /> },
+            })}
+        </div>
+    }
+}"##}
+                />
+
+                <h2 id="router-modes">Router Modes</h2>
+
+                <h3>"Hash Mode"</h3>
+                <p>"Uses the URL hash fragment. Works everywhere without server configuration:"</p>
+                <CodeBlock
+                    language="rust"
+                    filename="src/main.rs"
+                    highlight=""
+                    code={r##"// URLs look like: https://myapp.com/#/about
+    let router = RouterContext::new(RouterMode::Hash);"##}
+                />
+
+                <h3>"Pathname Mode"</h3>
+                <p>"Uses the History API for clean URLs. Requires server-side fallback to index.html:"</p>
+                <CodeBlock
+                    language="rust"
+                    filename="src/main.rs"
+                    highlight=""
+                    code={r#"// URLs look like: https://myapp.com/about
+    let router = RouterContext::new(RouterMode::Pathname);"#}
+                />
+
+                <Note variant="tip">
+                    <p>
+                        <strong>"Tip:"</strong> " Use Hash mode for static hosting (GitHub Pages, Netlify) and Pathname mode when you control the server configuration."
+                    </p>
+                </Note>
+
+                <h2 id="dynamic-routes">Dynamic Route Parameters</h2>
+                <p>"Define dynamic segments with :param syntax. Parameters are extracted into a RouteMatch:"</p>
+                <CodeBlock
+                    language="rust"
+                    filename="src/main.rs"
+                    highlight=""
+                    code={r#"use momenta_router::{RouterContext, RouterMode, RouteMatch, routes};
+
+#[component]
+fn App() -> Node {
+    let router = RouterContext::new(RouterMode::Hash);
+    let path = router.current_path();
+
+    rsx! {
+        {routes!(router, path, {
+            "/" => |_| rsx! { <Home /> },
+            "/user/:id" => |m: RouteMatch| {
+                let user_id = m.get("id").unwrap_or("unknown");
+                rsx! { <UserProfile id={user_id} /> }
+            },
+            "/posts/:id/comments/:comment_id" => |m: RouteMatch| {
+                let post_id = m.get("id").unwrap_or("0");
+                let comment_id = m.get("comment_id").unwrap_or("0");
+                rsx! {
+                    <CommentView post_id={post_id} comment_id={comment_id} />
+                }
+            },
+        })}
+    }
+}"#}
+                />
+
+                <h2 id="programmatic-navigation">Programmatic Navigation</h2>
+                <p>"Use router.navigate() to change routes from code, for example after form submissions:"</p>
+                <CodeBlock
+                    language="rust"
+                    filename="src/main.rs"
+                    highlight=""
+                    code={r#"#[component]
+fn LoginForm() -> Node {
+    let router = RouterContext::new(RouterMode::Hash);
+    let username = create_signal(String::new());
+
+    let handle_login = move |_| {
+        // After successful login, navigate to dashboard
+        router.navigate("/dashboard");
+    };
+
+    rsx! {
+        <form>
+            <input
+                type="text"
+                value={username}
+                placeholder="Username"
+            />
+            <button type="button" on:click={handle_login}>
+                "Login"
+            </button>
+        </form>
+    }
+}"#}
+                />
+
+                <h2 id="active-links">Active Link Styling</h2>
+                <p>"Use the current_path signal to conditionally style the active navigation link:"</p>
+                <CodeBlock
+                    language="rust"
+                    filename="src/main.rs"
+                    highlight=""
+                    code={r##"let router = RouterContext::new(RouterMode::Hash);
+let current_path = router.current_path();
+
+let nav_link = move |path: &'static str, label: &'static str| {
+    let is_active = current_path.get() == path;
+    let class = if is_active {
+        "nav-link text-primary font-bold border-b-2 border-primary"
+    } else {
+        "nav-link text-muted-foreground hover:text-foreground"
+    };
+
+    rsx! {
+        <a href={format!("#{path}")} class={class}>
+            {label}
+        </a>
+    }
+};
+
+rsx! {
+    <nav class="flex gap-4">
+        {nav_link("/", "Home")}
+        {nav_link("/about", "About")}
+        {nav_link("/contact", "Contact")}
+    </nav>
+}"##}
+                />
+
+                <h2 id="route-match">RouteMatch API</h2>
+                <p>"The RouteMatch struct provides parameter extraction for dynamic routes:"</p>
+                <CodeBlock
+                    language="rust"
+                    filename="src/main.rs"
+                    highlight=""
+                    code={r#"pub struct RouteMatch {
+    pub params: Vec<(String, String)>,
+}
+
+impl RouteMatch {
+    // Get a parameter by name
+    pub fn get(&self, key: &str) -> Option<&str>;
+}
+
+// Example usage in route handler
+"/blog/:slug" => |m: RouteMatch| {
+    let slug = m.get("slug").unwrap_or("not-found");
+    rsx! { <BlogPost slug={slug} /> }
+}"#}
+                />
+
+                <h2 id="best-practices">Best Practices</h2>
+                <ul>
+                    <li>"Create the RouterContext once at the top level and pass it down via props"</li>
+                    <li>"Use Hash mode for simple static deployments"</li>
+                    <li>"Use Pathname mode when you have server-side URL rewriting"</li>
+                    <li>"Keep route patterns simple and readable"</li>
+                    <li>"Extract route handlers into separate page components"</li>
+                    <li>"Use programmatic navigation for redirects and post-action flows"</li>
+                </ul>
+
+                <div class="mt-16 flex items-center justify-between border-t border-border pt-8">
+                    <a href="#/deployment" class="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                        "← Deployment"
+                    </a>
+                    <a href="#/examples" class="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                        "Examples →"
+                    </a>
+                </div>
+            </section>
+        </article>
+    }
+}
+
+// Examples Page
+#[component]
+fn ExamplesPage() -> Node {
+    rsx! {
+        <div class="px-6 py-10 sm:px-8 lg:px-10 fade-in">
+            <header class="mb-10">
+                <h1 class="text-3xl font-bold tracking-tight sm:text-4xl">Examples</h1>
+                <p class="mt-3 text-lg text-muted-foreground leading-relaxed">
+                    "Explore example applications built with Momenta."
+                </p>
+            </header>
+
+            <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <a href="#/examples/counter" class="card-link group">
+                    <div class="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-blue-500/10 text-blue-500">
+                        <i class="fas fa-plus-minus text-lg"></i>
+                    </div>
+                    <h3 class="font-medium mb-1 group-hover:text-primary transition-colors">Counter</h3>
+                    <p class="text-sm text-muted-foreground leading-relaxed">
+                        "A simple counter demonstrating signals, events, and reactive updates."
+                    </p>
+                </a>
+
+                <a href="#/examples/todomvc" class="card-link group">
+                    <div class="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-green-500/10 text-green-500">
+                        <i class="fas fa-check-square text-lg"></i>
+                    </div>
+                    <h3 class="font-medium mb-1 group-hover:text-primary transition-colors">TodoMVC</h3>
+                    <p class="text-sm text-muted-foreground leading-relaxed">
+                        "Complete TodoMVC implementation with filtering, editing, and persistence."
+                    </p>
+                </a>
+
+                <a href="#/examples/hackernews" class="card-link group">
+                    <div class="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-orange-500/10 text-orange-500">
+                        <i class="fab fa-hacker-news text-lg"></i>
+                    </div>
+                    <h3 class="font-medium mb-1 group-hover:text-primary transition-colors">Hacker News</h3>
+                    <p class="text-sm text-muted-foreground leading-relaxed">
+                        "HN client with async data fetching, pagination, and comments."
+                    </p>
+                </a>
+
+                <a href="#/examples/realworld" class="card-link group">
+                    <div class="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-purple-500/10 text-purple-500">
+                        <i class="fas fa-globe text-lg"></i>
+                    </div>
+                    <h3 class="font-medium mb-1 group-hover:text-primary transition-colors">RealWorld</h3>
+                    <p class="text-sm text-muted-foreground leading-relaxed">
+                        "Full-stack blog platform with auth, articles, comments, and profiles."
+                    </p>
+                </a>
+
+                <div class="card-link group border-dashed opacity-60">
+                    <div class="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                        <i class="fas fa-plus text-lg"></i>
+                    </div>
+                    <h3 class="font-medium mb-1">More Coming Soon</h3>
+                    <p class="text-sm text-muted-foreground leading-relaxed">
+                        "Additional examples are being added. Contributions welcome!"
+                    </p>
+                </div>
             </div>
         </div>
     }

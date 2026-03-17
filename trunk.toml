@@ -5,7 +5,7 @@ release = true
 manifest-path = "./docs/Cargo.toml"
 
 [watch]
-watch = ["./docs/src", "./docs/static"]
+watch = ["./docs/src", "./docs/static", "./docs/index.html", "./docs/globals.css", "./docs/tailwind.config.ts", "./tailwind.config.ts"]
 ignore = ["dist", "target"]
 
 [serve]
