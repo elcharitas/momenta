@@ -1081,9 +1081,9 @@ fn render_scope(scope_id: usize) -> Node {
         let scope_fn = rt.scope_mut(scope_id).and_then(|s| s.function.take());
 
         if let Some(scope) = rt.scope_mut(scope_id) {
-            for eff in scope.effects.iter_mut() {
-                *eff = None;
-            }
+            scope.effects.clear();
+            scope.effect_cleanups.clear();
+            scope.effect_executing.clear();
             scope.effect_count = 0;
         }
 
@@ -1206,7 +1206,20 @@ fn process_pending_renders() {
 
     while let Some(scope_id) = {
         let mut rt = RUNTIME.lock();
-        rt.pending_scope_renders.pop()
+        if rt.pending_scope_renders.is_empty() {
+            None
+        } else {
+            // Process smallest scope_id first so parent scopes render
+            // before orphaned child scopes (matches main branch BTreeSet order).
+            let min_idx = rt
+                .pending_scope_renders
+                .iter()
+                .enumerate()
+                .min_by_key(|&(_, &id)| id)
+                .map(|(i, _)| i)
+                .unwrap();
+            Some(rt.pending_scope_renders.swap_remove(min_idx))
+        }
     } {
         iterations += 1;
         if iterations >= MAX_ITERATIONS {
