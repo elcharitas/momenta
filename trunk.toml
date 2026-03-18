@@ -3,6 +3,8 @@ target = "./docs/index.html"
 public_url = "./"
 release = true
 manifest-path = "./docs/Cargo.toml"
+minify = "on_release"
+filehash = true
 
 [watch]
 watch = ["./docs/src", "./docs/static", "./docs/index.html", "./docs/globals.css", "./docs/tailwind.config.ts", "./tailwind.config.ts"]

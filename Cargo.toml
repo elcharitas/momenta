@@ -2,3 +2,9 @@
 members = ["momenta-macros", "momenta-core", "momenta", "momenta-dom", "momenta-ssr", "tests", "docs", "momenta-router", "benches"]
 exclude = ["benches-base", "benches-comparison"]
 resolver = "3"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
