@@ -10,7 +10,7 @@
 use core::fmt::{self, Write};
 use momenta::{
     nodes::{Component, Element, Node},
-    signals::{run_scope_transient, with_isolated_runtime},
+    signals::run_scope_transient,
 };
 
 pub const HYDRATION_ID_ATTR: &str = "data-momenta-hid";
@@ -48,7 +48,8 @@ impl Default for HydrationOptions {
 }
 
 pub fn render_to_string(render: impl FnOnce() -> Node + Send + 'static) -> String {
-    render_to_string_with_options(render, RenderOptions::default())
+    let node = render_node(render);
+    node.to_html()
 }
 
 pub fn render_to_string_with_options(
@@ -240,12 +241,10 @@ type HyperChunkStream = futures_util::stream::Iter<
 fn render_node(render: impl FnOnce() -> Node + Send + 'static) -> Node {
     let mut render = Some(render);
 
-    with_isolated_runtime(|| {
-        run_scope_transient(
-            move || render.take().expect("render closure should only run once")(),
-            |_| {},
-        )
-    })
+    run_scope_transient(
+        move || render.take().expect("render closure should only run once")(),
+        |_| {},
+    )
 }
 
 fn write_node_to_writer(
@@ -414,6 +413,15 @@ fn collect_materialized_nodes<'a>(node: &'a Node, out: &mut Vec<&'a Node>) {
 }
 
 fn write_escaped_text(text: &str, collector: &mut ChunkCollector) {
+    let needs_escape = text
+        .bytes()
+        .any(|b| matches!(b, b'<' | b'>' | b'&' | b'"' | b'/'));
+
+    if !needs_escape {
+        collector.push_str(text);
+        return;
+    }
+
     for ch in text.chars() {
         match ch {
             '<' => collector.push_str("&lt;"),
@@ -464,9 +472,8 @@ impl ChunkCollector {
     }
 
     fn push_str(&mut self, value: &str) {
-        for ch in value.chars() {
-            self.push_char(ch);
-        }
+        self.current.push_str(value);
+        self.flush_if_needed();
     }
 
     fn flush_if_needed(&mut self) {
@@ -491,10 +498,10 @@ impl ChunkCollector {
 mod tests {
     use super::*;
     use momenta::{nodes::Element, prelude::*};
-    use std::{collections::BTreeMap, string::String, vec};
+    use std::{string::String, vec};
 
     fn element(tag: &'static str, children: Vec<Node>) -> Node {
-        Element::parse_tag_with_attributes("", tag, BTreeMap::new(), BTreeMap::new(), "", children)
+        Element::parse_tag_with_attributes("", tag, Vec::new(), Vec::new(), "", children)
     }
 
     #[test]

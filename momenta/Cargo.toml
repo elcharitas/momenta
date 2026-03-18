@@ -14,7 +14,7 @@ documentation = "https://docs.rs/momenta"
 paste = "1.0"
 momenta-macros = { path = "../momenta-macros", version = "0.3.1" }
 momenta-core = { path = "../momenta-core", version = "0.3.1" }
-momenta-dom = { path = "../momenta-dom", version = "0.3.1", optional = true }
+momenta-dom = { path = "../momenta-dom", version = "0.3.1", optional = true, default-features = false }
 wasm-bindgen = { version = "0.2", optional = true }
 wasm-bindgen-futures = { version = "0.4", optional = true }
 web-sys = { version = "0.3", optional = true, features = [

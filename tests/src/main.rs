@@ -70,12 +70,20 @@ mod tests {
                 assert_eq!(element.tag(), "div");
                 assert_eq!(element.attributes().len(), 2);
                 assert_eq!(
-                    element.attributes().get("class"),
-                    Some("container".to_string()).as_ref()
+                    element
+                        .attributes()
+                        .iter()
+                        .find(|(k, _)| k == "class")
+                        .map(|(_, v)| v.as_str()),
+                    Some("container")
                 );
                 assert_eq!(
-                    element.attributes().get("id"),
-                    Some("app".to_string()).as_ref()
+                    element
+                        .attributes()
+                        .iter()
+                        .find(|(k, _)| k == "id")
+                        .map(|(_, v)| v.as_str()),
+                    Some("app")
                 );
                 assert_eq!(element.children().len(), 0);
             }
@@ -124,12 +132,20 @@ mod tests {
                 assert_eq!(element.tag(), "input");
                 assert_eq!(element.attributes().len(), 3);
                 assert_eq!(
-                    element.attributes().get("type"),
-                    Some("text".to_string()).as_ref()
+                    element
+                        .attributes()
+                        .iter()
+                        .find(|(k, _)| k == "type")
+                        .map(|(_, v)| v.as_str()),
+                    Some("text")
                 );
                 assert_eq!(
-                    element.attributes().get("placeholder"),
-                    Some("Enter name".to_string()).as_ref()
+                    element
+                        .attributes()
+                        .iter()
+                        .find(|(k, _)| k == "placeholder")
+                        .map(|(_, v)| v.as_str()),
+                    Some("Enter name")
                 )
             }
             _ => panic!("Expected element"),

@@ -12,7 +12,7 @@ documentation = "https://docs.rs/momenta-dom"
 
 [dependencies]
 paste = "1.0"
-momenta-core = { path = "../momenta-core", version = "0.3.1", features = ["wasm"] }
+momenta-core = { path = "../momenta-core", version = "0.3.1", default-features = false }
 momenta-macros = { path = "../momenta-macros", version = "0.3.1" }
 wasm-bindgen = { version = "0.2", optional = true }
 wasm-bindgen-futures = { version = "0.4", optional = true }
@@ -32,4 +32,4 @@ web-sys = { version = "0.3", optional = true, features = [
 
 [features]
 default = ["wasm"]
-wasm = ["wasm-bindgen", "wasm-bindgen-futures", "web-sys"]
+wasm = ["momenta-core/wasm", "wasm-bindgen", "wasm-bindgen-futures", "web-sys"]

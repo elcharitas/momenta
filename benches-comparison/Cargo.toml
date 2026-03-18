@@ -1,0 +1,31 @@
+[package]
+name = "momenta-comparison-benchmarks"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+# Momenta (local)
+momenta = { path = "../momenta", default-features = false, features = ["dom", "full-reactivity"] }
+momenta-ssr = { path = "../momenta-ssr" }
+
+# Leptos
+leptos = { version = "0.8", features = ["ssr"] }
+
+# Dioxus
+dioxus = { version = "0.7", default-features = false, features = ["macro", "html", "signals", "hooks", "ssr"] }
+
+# Yew
+yew = { version = "0.23", features = ["ssr"] }
+
+# Benchmarking
+criterion = { version = "0.5", features = ["html_reports"] }
+tokio = { version = "1", features = ["rt-multi-thread"] }
+
+[[bench]]
+name = "ssr"
+harness = false
+
+[[bench]]
+name = "signals"
+harness = false

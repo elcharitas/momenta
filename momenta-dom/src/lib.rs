@@ -10,16 +10,16 @@
 
 extern crate alloc;
 
+#[cfg(feature = "wasm")]
 use alloc::{
     string::{String, ToString},
     vec::Vec,
 };
+use momenta_core::nodes::{Component, Node};
+#[cfg(feature = "wasm")]
+use momenta_core::signals::run_scope;
 #[cfg(not(feature = "wasm"))]
 use momenta_core::signals::{has_current_scope, run_scope_transient};
-use momenta_core::{
-    nodes::{Component, Node},
-    signals::run_scope,
-};
 
 #[cfg(feature = "wasm")]
 use wasm_bindgen::JsCast;
@@ -193,14 +193,14 @@ impl WasmRender for momenta_core::nodes::Element {
             .filter_map(|i| old_attrs.item(i).map(|attr| attr.name()))
             .collect();
         for attr_name in old_attr_names {
-            if !self.attributes().contains_key(&attr_name) {
+            if !self.attributes().iter().any(|(k, _)| k == &attr_name) {
                 let _ = old_element.remove_attribute(&attr_name);
             }
         }
 
         // Add or update new attributes
         for (name, value) in self.attributes() {
-            if old_element.get_attribute(name).as_deref() != Some(value) {
+            if old_element.get_attribute(name).as_deref() != Some(value.as_str()) {
                 let _ = old_element.set_attribute(name, value);
             }
         }
@@ -329,6 +329,7 @@ impl WasmRender for Node {
 ///     println!("{}", node.to_string());
 /// }
 /// ```
+#[inline]
 pub fn component<C: Component>(props: C::Props) -> Node
 where
     <C as Component>::Props: Send + Sync + 'static,
@@ -569,7 +570,7 @@ fn sync_element_for_hydration(
             continue;
         }
 
-        if !expected.attributes().contains_key(&attr_name) {
+        if !expected.attributes().iter().any(|(k, _)| k == &attr_name) {
             let _ = existing.remove_attribute(&attr_name);
         }
     }
@@ -580,7 +581,7 @@ fn sync_element_for_hydration(
     }
 
     for (name, value) in expected.attributes() {
-        if existing.get_attribute(name).as_deref() != Some(value) {
+        if existing.get_attribute(name).as_deref() != Some(value.as_str()) {
             let _ = existing.set_attribute(name, value);
         }
     }
@@ -637,6 +638,7 @@ fn collect_materialized_nodes<'a>(node: &'a Node, out: &mut Vec<&'a Node>) {
     }
 }
 
+#[inline]
 fn render_component<C: Component>(
     props: C::Props,
     callback: impl Fn(&Node) + Send + Sync + 'static,
@@ -668,11 +670,11 @@ where
     #[cfg(not(feature = "wasm"))]
     {
         if has_current_scope() {
-            let node = C::render(&props);
+            let node = C::render_owned(props);
             callback(&node);
             node
         } else {
-            run_scope_transient(move || C::render(&props), move |node| callback(node))
+            run_scope_transient(move || C::render_owned(props), move |node| callback(node))
         }
     }
 }
@@ -1407,149 +1409,155 @@ macro_rules! derive_elements {
 
                 #[allow(deprecated)]
                 impl [<HTML $tag:camel Element Props>] {
-                    fn to_attributes(&self) -> alloc::collections::BTreeMap<String, String> {
+                    fn to_attributes(&self) -> alloc::vec::Vec<(String, String)> {
                         #[allow(unused_imports)]
                         use $crate::nodes::{Attribute, OptionAttribute};
                         #[allow(unused_mut)]
-                        let mut attributes = alloc::collections::BTreeMap::new();
+                        let mut attributes = alloc::vec::Vec::new();
                         $(
-                            if !self.$attr_name.value().is_empty() {
-                                let mut key = stringify!($attr_name);
-                                if let Some(last_char) = key.chars().last() {
-                                    if last_char == '_' {
-                                        key = &key[..key.len() - 1];
+                            {
+                                let _val = self.$attr_name.value();
+                                if !_val.is_empty() {
+                                    let mut key = stringify!($attr_name);
+                                    if let Some(last_char) = key.chars().last() {
+                                        if last_char == '_' {
+                                            key = &key[..key.len() - 1];
+                                        }
+                                    }
+                                    if key.contains('_') {
+                                        attributes.push((key.replace('_', "-"), _val));
+                                    } else {
+                                        attributes.push((key.to_string(), _val));
                                     }
                                 }
-                                attributes.insert(key.replace('_', "-"), self.$attr_name.value());
                             }
                         )*
-                        if !self.id.value().is_empty() {
-                            attributes.insert("id".to_string(), self.id.value());
+                        if !self.id.is_empty() {
+                            attributes.push(("id".to_string(), self.id.clone()));
                         }
-                        if !self.class.value().is_empty() {
-                            attributes.insert("class".to_string(), self.class.value());
+                        if !self.class.is_empty() {
+                            attributes.push(("class".to_string(), self.class.clone()));
                         }
-                        if !self.style.value().is_empty() {
-                            attributes.insert("style".to_string(), self.style.value());
+                        if !self.style.is_empty() {
+                            attributes.push(("style".to_string(), self.style.clone()));
                         }
-                        if !self.title.value().is_empty() {
-                            attributes.insert("title".to_string(), self.title.value());
+                        if !self.title.is_empty() {
+                            attributes.push(("title".to_string(), self.title.clone()));
                         }
                         if self.draggable {
-                            attributes.insert("draggable".to_string(), "true".to_string());
+                            attributes.push(("draggable".to_string(), "true".to_string()));
                         }
                         if self.hidden {
-                            attributes.insert("hidden".to_string(), "true".to_string());
+                            attributes.push(("hidden".to_string(), "true".to_string()));
                         }
-                        if !self.accesskey.value().is_empty() {
-                            attributes.insert("accesskey".to_string(), self.accesskey.value());
+                        if !self.accesskey.is_empty() {
+                            attributes.push(("accesskey".to_string(), self.accesskey.clone()));
                         }
                         if self.contenteditable {
-                            attributes.insert("contenteditable".to_string(), "true".to_string());
+                            attributes.push(("contenteditable".to_string(), "true".to_string()));
                         }
-                        if !self.dir.value().is_empty() {
-                            attributes.insert("dir".to_string(), self.dir.value());
+                        if !self.dir.is_empty() {
+                            attributes.push(("dir".to_string(), self.dir.clone()));
                         }
                         if let Some(tabindex) = self.tabindex {
-                            attributes.insert("tabindex".to_string(), tabindex.to_string());
+                            attributes.push(("tabindex".to_string(), tabindex.to_string()));
                         }
                         if self.spellcheck {
-                            attributes.insert("spellcheck".to_string(), "true".to_string());
+                            attributes.push(("spellcheck".to_string(), "true".to_string()));
                         }
-                        if !self.lang.value().is_empty() {
-                            attributes.insert("lang".to_string(), self.lang.value());
+                        if !self.lang.is_empty() {
+                            attributes.push(("lang".to_string(), self.lang.clone()));
                         }
                         if self.translate {
-                            attributes.insert("translate".to_string(), "true".to_string());
+                            attributes.push(("translate".to_string(), "true".to_string()));
                         }
-                        if !self.autocapitalize.value().is_empty() {
-                            attributes.insert("autocapitalize".to_string(), self.autocapitalize.value());
+                        if !self.autocapitalize.is_empty() {
+                            attributes.push(("autocapitalize".to_string(), self.autocapitalize.clone()));
                         }
-                        if !self.role.value().is_empty() {
-                            attributes.insert("role".to_string(), self.role.value());
+                        if !self.role.is_empty() {
+                            attributes.push(("role".to_string(), self.role.clone()));
                         }
-                        if !self.aria_current.value().is_empty() {
-                            attributes.insert("aria-current".to_string(), self.aria_current.value());
+                        if !self.aria_current.is_empty() {
+                            attributes.push(("aria-current".to_string(), self.aria_current.clone()));
                         }
-                        if !self.aria_label.value().is_empty() {
-                            attributes.insert("aria-label".to_string(), self.aria_label.value());
+                        if !self.aria_label.is_empty() {
+                            attributes.push(("aria-label".to_string(), self.aria_label.clone()));
                         }
-                        if !self.aria_labelledby.value().is_empty() {
-                            attributes.insert("aria-labelledby".to_string(), self.aria_labelledby.value());
+                        if !self.aria_labelledby.is_empty() {
+                            attributes.push(("aria-labelledby".to_string(), self.aria_labelledby.clone()));
                         }
-                        if !self.aria_describedby.value().is_empty() {
-                            attributes.insert("aria-describedby".to_string(), self.aria_describedby.value());
+                        if !self.aria_describedby.is_empty() {
+                            attributes.push(("aria-describedby".to_string(), self.aria_describedby.clone()));
                         }
                         if self.aria_expanded {
-                            attributes.insert("aria-expanded".to_string(), "true".to_string());
+                            attributes.push(("aria-expanded".to_string(), "true".to_string()));
                         }
                         if self.aria_selected {
-                            attributes.insert("aria-selected".to_string(), "true".to_string());
+                            attributes.push(("aria-selected".to_string(), "true".to_string()));
                         }
-                        if !self.aria_checked.value().is_empty() {
-                            attributes.insert("aria-checked".to_string(), self.aria_checked.value());
+                        if !self.aria_checked.is_empty() {
+                            attributes.push(("aria-checked".to_string(), self.aria_checked.clone()));
                         }
                         if self.aria_hidden {
-                            attributes.insert("aria-hidden".to_string(), "true".to_string());
+                            attributes.push(("aria-hidden".to_string(), "true".to_string()));
                         }
-                        if !self.aria_haspopup.value().is_empty() {
-                            attributes.insert("aria-haspopup".to_string(), self.aria_haspopup.value());
+                        if !self.aria_haspopup.is_empty() {
+                            attributes.push(("aria-haspopup".to_string(), self.aria_haspopup.clone()));
                         }
-                        if !self.aria_role.value().is_empty() {
-                            attributes.insert("aria-role".to_string(), self.aria_role.value());
+                        if !self.aria_role.is_empty() {
+                            attributes.push(("aria-role".to_string(), self.aria_role.clone()));
                         }
-                        // Add data-* attributes
                         for (key, value) in &self.data_ {
                             if key.starts_with("data_") {
-                                attributes.insert(key.replace("_", "-"), value.clone());
+                                attributes.push((key.replace("_", "-"), value.clone()));
                             } else {
-                                attributes.insert(format!("data-{}", key), value.clone());
+                                attributes.push((format!("data-{}", key), value.clone()));
                             }
                         }
 
                         attributes
                     }
                     #[cfg(feature = "wasm")]
-                    fn get_events(&self) -> alloc::collections::BTreeMap<String, $crate::nodes::EventCallback> {
-                        let mut events = alloc::collections::BTreeMap::new();
+                    fn get_events(&self) -> alloc::vec::Vec<(String, $crate::nodes::EventCallback)> {
+                        let mut events = alloc::vec::Vec::new();
                         if self.on_click.has_callback() {
-                            events.insert("click".to_string(), self.on_click.clone());
+                            events.push(("click".to_string(), self.on_click.clone()));
                         }
                         if self.on_keydown.has_callback() {
-                            events.insert("keydown".to_string(), self.on_keydown.clone());
+                            events.push(("keydown".to_string(), self.on_keydown.clone()));
                         }
                         if self.on_keyup.has_callback() {
-                            events.insert("keyup".to_string(), self.on_keyup.clone());
+                            events.push(("keyup".to_string(), self.on_keyup.clone()));
                         }
                         if self.on_keypress.has_callback() {
-                            events.insert("keypress".to_string(), self.on_keypress.clone());
+                            events.push(("keypress".to_string(), self.on_keypress.clone()));
                         }
                         if self.on_focus.has_callback() {
-                            events.insert("focus".to_string(), self.on_focus.clone());
+                            events.push(("focus".to_string(), self.on_focus.clone()));
                         }
                         if self.on_blur.has_callback() {
-                            events.insert("blur".to_string(), self.on_blur.clone());
+                            events.push(("blur".to_string(), self.on_blur.clone()));
                         }
                         if self.on_change.has_callback() {
-                            events.insert("change".to_string(), self.on_change.clone());
+                            events.push(("change".to_string(), self.on_change.clone()));
                         }
                         if self.on_input.has_callback() {
-                            events.insert("input".to_string(), self.on_input.clone());
+                            events.push(("input".to_string(), self.on_input.clone()));
                         }
                         if self.on_submit.has_callback() {
-                            events.insert("submit".to_string(), self.on_submit.clone());
+                            events.push(("submit".to_string(), self.on_submit.clone()));
                         }
                         if self.on_reset.has_callback() {
-                            events.insert("reset".to_string(), self.on_reset.clone());
+                            events.push(("reset".to_string(), self.on_reset.clone()));
                         }
                         if self.on_mouseover.has_callback() {
-                            events.insert("mouseover".to_string(), self.on_mouseover.clone());
+                            events.push(("mouseover".to_string(), self.on_mouseover.clone()));
                         }
                         events
                     }
                     #[cfg(not(feature = "wasm"))]
-                    fn get_events(&self) -> alloc::collections::BTreeMap<String, String> {
-                        alloc::collections::BTreeMap::new()
+                    fn get_events(&self) -> alloc::vec::Vec<(String, String)> {
+                        alloc::vec::Vec::new()
                     }
                 }
 
@@ -1565,6 +1573,18 @@ macro_rules! derive_elements {
                             props.get_events(),
                             &props._dangerously_set_inner_html,
                             props.children.clone(),
+                        )
+                    }
+
+                    fn render_owned(mut props: Self::Props) -> $crate::nodes::Node {
+                        let children = core::mem::take(&mut props.children);
+                        $crate::nodes::Element::parse_tag_with_attributes(
+                            &props.key,
+                            stringify!($tag),
+                            props.to_attributes(),
+                            props.get_events(),
+                            &props._dangerously_set_inner_html,
+                            children,
                         )
                     }
                 }

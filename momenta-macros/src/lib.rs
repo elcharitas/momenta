@@ -902,6 +902,84 @@ impl RsxNode {
     }
 
     fn to_tokens(&self) -> TokenStream2 {
+        // Check if this node can be fully rendered at compile time (no dynamic content).
+        // Returns the pre-rendered HTML string if possible.
+        fn compile_time_html(node: &RsxNode) -> Option<String> {
+            match node {
+                RsxNode::Text(syn::Expr::Lit(ExprLit {
+                    lit: Lit::Str(s), ..
+                })) => {
+                    let text = s.value();
+                    let mut escaped = String::with_capacity(text.len());
+                    for c in text.chars() {
+                        match c {
+                            '<' => escaped.push_str("&lt;"),
+                            '>' => escaped.push_str("&gt;"),
+                            '&' => escaped.push_str("&amp;"),
+                            '"' => escaped.push_str("&quot;"),
+                            '/' => escaped.push_str("&#x2F;"),
+                            _ => escaped.push(c),
+                        }
+                    }
+                    Some(escaped)
+                }
+                RsxNode::Component {
+                    name,
+                    props,
+                    children,
+                    ..
+                } => {
+                    let is_element = name.to_string().starts_with(|c: char| !c.is_uppercase());
+                    if !is_element {
+                        return None;
+                    }
+                    // Check that all props (if any) are named with string literal values
+                    // and none are events, key, or _dangerously_set_inner_html
+                    for (prop_name, prop_value, _) in props {
+                        let name_str = prop_name.as_ref()?.to_string();
+                        if name_str.starts_with("on_")
+                            || name_str == "key"
+                            || name_str == "_dangerously_set_inner_html"
+                        {
+                            return None;
+                        }
+                        match prop_value {
+                            Some(syn::Expr::Lit(ExprLit {
+                                lit: Lit::Str(_), ..
+                            })) => {}
+                            _ => return None,
+                        }
+                    }
+                    let tag = name.to_string();
+                    let mut html = format!("<{tag}");
+                    for (prop_name, prop_value, _) in props {
+                        let raw_name = prop_name.as_ref().unwrap().to_string();
+                        let attr_name = raw_name.strip_suffix('_').unwrap_or(&raw_name);
+                        let attr_name = attr_name.replace('_', "-");
+                        let value = match prop_value {
+                            Some(syn::Expr::Lit(ExprLit {
+                                lit: Lit::Str(s), ..
+                            })) => s.value(),
+                            _ => unreachable!(),
+                        };
+                        html.push(' ');
+                        html.push_str(&attr_name);
+                        html.push_str("=\"");
+                        html.push_str(&value);
+                        html.push('"');
+                    }
+                    html.push('>');
+                    for child in children {
+                        html.push_str(&compile_time_html(child)?);
+                    }
+                    html.push_str(&format!("</{tag}>"));
+                    Some(html)
+                }
+                RsxNode::Empty => Some(String::new()),
+                _ => None,
+            }
+        }
+
         match self {
             RsxNode::Component {
                 name,
@@ -912,6 +990,83 @@ impl RsxNode {
                 close_span,
             } => {
                 let is_element = name.to_string().starts_with(|c: char| !c.is_uppercase());
+
+                // Fast path: HTML elements with no attributes bypass Props construction
+                // entirely in non-wasm mode. This avoids Default::default() for 30+ fields,
+                // to_attributes() scanning, and the component()/render_component() call chain.
+                if is_element && props.is_empty() {
+                    let child_tokens: Vec<TokenStream2> =
+                        children.iter().map(|child| child.to_tokens()).collect();
+                    let tag_name = name.to_string();
+                    let tag_str = LitStr::new(&tag_name, name.span());
+
+                    let close_tag_validation = close_tag.as_ref().zip(*close_span).map(
+                        |(close_tag, close_span)| {
+                            let close =
+                                quote_spanned! { close_span=> momenta::dom::elements::#close_tag };
+                            quote_spanned! { close_span=>
+                                {
+                                    let _ = #close;
+                                };
+                            }
+                        },
+                    );
+
+                    let component = quote_spanned! { *open_span=> momenta::dom::elements::#name };
+
+                    // Compile-time HTML: if the entire subtree (including children
+                    // with static literal props) can be rendered at compile time,
+                    // emit Node::Static for zero runtime allocation.
+                    if let Some(static_html) = compile_time_html(self) {
+                        let html_lit = LitStr::new(&static_html, *open_span);
+                        return quote_spanned! { *open_span=>
+                            {
+                                #close_tag_validation
+                                #[cfg(not(target_arch = "wasm32"))]
+                                {
+                                    ::momenta::nodes::Node::Static(#html_lit)
+                                }
+                                #[cfg(target_arch = "wasm32")]
+                                {
+                                    type Props = <#component as ::momenta::nodes::Component>::Props;
+                                    ::momenta::dom::component::<#component>(
+                                        Props {
+                                            children: vec![#(#child_tokens),*],
+                                            ..Default::default()
+                                        }
+                                    )
+                                }
+                            }
+                        };
+                    }
+
+                    return quote_spanned! { *open_span=>
+                        {
+                            #close_tag_validation
+                            #[cfg(not(target_arch = "wasm32"))]
+                            {
+                                ::momenta::nodes::Element::parse_tag_with_attributes(
+                                    "",
+                                    #tag_str,
+                                    vec![],
+                                    vec![],
+                                    "",
+                                    vec![#(#child_tokens),*],
+                                )
+                            }
+                            #[cfg(target_arch = "wasm32")]
+                            {
+                                type Props = <#component as ::momenta::nodes::Component>::Props;
+                                ::momenta::dom::component::<#component>(
+                                    Props {
+                                        children: vec![#(#child_tokens),*],
+                                        ..Default::default()
+                                    }
+                                )
+                            }
+                        }
+                    };
+                }
 
                 let attrs = props
                     .iter() // filter out data- attributes for elements
@@ -1045,9 +1200,24 @@ impl RsxNode {
                 }
             }
             RsxNode::Text(expr) => {
-                quote! {
-                    {
-                        ::momenta::nodes::Node::from(#expr)
+                // String literals use Node::Static(&'static str) — zero allocation
+                if matches!(
+                    &expr,
+                    syn::Expr::Lit(ExprLit {
+                        lit: Lit::Str(_),
+                        ..
+                    })
+                ) {
+                    quote! {
+                        {
+                            ::momenta::nodes::Node::Static(#expr)
+                        }
+                    }
+                } else {
+                    quote! {
+                        {
+                            ::momenta::nodes::Node::from(#expr)
+                        }
                     }
                 }
             }
