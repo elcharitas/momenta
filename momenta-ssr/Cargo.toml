@@ -1,6 +1,6 @@
 [package]
 name = "momenta-ssr"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2024"
 description = "Server-side rendering utilities for Momenta"
 authors = ["Jonathan Irhodia <jonathanirhodia@gmail.com>"]
@@ -12,7 +12,7 @@ documentation = "https://docs.rs/momenta-ssr"
 readme = "README.md"
 
 [dependencies]
-momenta = { path = "../momenta", version = "0.3.1", default-features = false }
+momenta = { path = "../momenta", version = "0.3.2", default-features = false }
 actix-web = { version = "4.13", optional = true, default-features = false, features = ["macros"] }
 axum = { version = "0.8", optional = true }
 bytes = { version = "1.10", optional = true }
