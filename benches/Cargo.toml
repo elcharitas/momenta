@@ -5,7 +5,7 @@ edition = "2024"
 publish = false
 
 [dependencies]
-momenta = { path = "../momenta" }
+momenta = { path = "../momenta", default-features = false, features = ["dom", "full-reactivity"] }
 criterion = { version = "0.5", features = ["html_reports"] }
 
 [[bench]]

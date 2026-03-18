@@ -2,7 +2,6 @@
 use crate::signals::{Signal, SignalValue};
 use alloc::{
     borrow::Cow,
-    collections::BTreeMap,
     string::{String, ToString},
     vec::Vec,
 };
@@ -10,18 +9,12 @@ use core::{fmt::Display, iter::FromIterator};
 
 pub use momenta_macros::{component, rsx, when};
 
-/// Optimized HTML writer that minimizes allocations
-///
-/// This struct provides efficient HTML generation by:
-/// - Using a pre-allocated buffer with estimated capacity
-/// - Writing directly to the buffer without intermediate string creation
-/// - Leveraging fmt::Write for zero-allocation formatting
+/// Optimized HTML writer that minimizes allocations by pre-allocating capacity.
 pub struct HtmlWriter {
     buffer: String,
 }
 
 impl HtmlWriter {
-    /// Creates a new HtmlWriter with the specified capacity
     #[inline]
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
@@ -29,117 +22,11 @@ impl HtmlWriter {
         }
     }
 
-    /// Creates a new HtmlWriter with default capacity
     #[inline]
     pub fn new() -> Self {
         Self::with_capacity(512)
     }
 
-    /// Writes an opening tag with attributes
-    #[inline]
-    fn write_open_tag(&mut self, tag: &str, attributes: &BTreeMap<String, String>) {
-        self.buffer.push('<');
-        self.buffer.push_str(tag);
-
-        if !attributes.is_empty() {
-            for (key, value) in attributes {
-                self.buffer.push(' ');
-                self.buffer.push_str(key);
-                self.buffer.push_str("=\"");
-                self.buffer.push_str(value);
-                self.buffer.push('"');
-            }
-        }
-
-        self.buffer.push('>');
-    }
-
-    /// Fast path for tags without attributes
-    #[inline]
-    fn write_open_tag_no_attrs(&mut self, tag: &str) {
-        self.buffer.push('<');
-        self.buffer.push_str(tag);
-        self.buffer.push('>');
-    }
-
-    /// Writes a closing tag
-    #[inline]
-    fn write_close_tag(&mut self, tag: &str) {
-        self.buffer.push_str("</");
-        self.buffer.push_str(tag);
-        self.buffer.push('>');
-    }
-
-    /// Writes sanitized text content
-    #[inline]
-    fn write_text(&mut self, text: &str) {
-        // Fast path: check if text needs escaping at all
-        let needs_escape = text
-            .bytes()
-            .any(|b| matches!(b, b'<' | b'>' | b'&' | b'"' | b'/'));
-
-        if !needs_escape {
-            // Zero-cost: no escaping needed
-            self.buffer.push_str(text);
-            return;
-        }
-
-        // Slow path: escape as needed
-        for c in text.chars() {
-            match c {
-                '<' => self.buffer.push_str("&lt;"),
-                '>' => self.buffer.push_str("&gt;"),
-                '&' => self.buffer.push_str("&amp;"),
-                '"' => self.buffer.push_str("&quot;"),
-                '/' => self.buffer.push_str("&#x2F;"),
-                _ => self.buffer.push(c),
-            }
-        }
-    }
-
-    /// Writes a node to the buffer
-    #[inline]
-    fn write_node(&mut self, node: &Node) {
-        match node {
-            Node::Element(el) => {
-                // Fast path for elements without attributes
-                if el.attributes.is_empty() {
-                    self.write_open_tag_no_attrs(&el.tag);
-                } else {
-                    self.write_open_tag(&el.tag, &el.attributes);
-                }
-
-                if !el.inner_html.is_empty() {
-                    self.buffer.push_str(&el.inner_html);
-                } else {
-                    for child in &el.children {
-                        self.write_node(child);
-                    }
-                }
-                self.write_close_tag(&el.tag);
-            }
-            Node::Text(text) => {
-                self.write_text(text);
-            }
-            Node::Fragment(nodes) => {
-                for node in nodes {
-                    self.write_node(node);
-                }
-            }
-            Node::Comment(comment) => {
-                self.buffer.push_str("<!--");
-                self.buffer.push_str(comment);
-                self.buffer.push_str("-->");
-            }
-            Node::Static(html) => {
-                // Zero-cost: pre-rendered HTML, no escaping needed
-                self.buffer.push_str(html);
-            }
-            Node::Empty => {}
-        }
-    }
-
-    /// Consumes the writer and returns the generated HTML
     #[inline]
     pub fn finish(self) -> String {
         self.buffer
@@ -150,6 +37,71 @@ impl Default for HtmlWriter {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Write escaped text content to any `fmt::Write` sink.
+#[inline]
+fn write_escaped_text(text: &str, w: &mut impl core::fmt::Write) -> core::fmt::Result {
+    if !text
+        .bytes()
+        .any(|b| matches!(b, b'<' | b'>' | b'&' | b'"' | b'/'))
+    {
+        return w.write_str(text);
+    }
+    for c in text.chars() {
+        match c {
+            '<' => w.write_str("&lt;")?,
+            '>' => w.write_str("&gt;")?,
+            '&' => w.write_str("&amp;")?,
+            '"' => w.write_str("&quot;")?,
+            '/' => w.write_str("&#x2F;")?,
+            _ => w.write_char(c)?,
+        }
+    }
+    Ok(())
+}
+
+/// Write a node's HTML to any `fmt::Write` sink (String, Formatter, etc.).
+#[inline]
+fn write_node_html(node: &Node, w: &mut impl core::fmt::Write) -> core::fmt::Result {
+    match node {
+        Node::Element(el) => {
+            w.write_str("<")?;
+            w.write_str(&el.tag)?;
+            for (key, value) in &el.attributes {
+                w.write_str(" ")?;
+                w.write_str(key)?;
+                w.write_str("=\"")?;
+                w.write_str(value)?;
+                w.write_str("\"")?;
+            }
+            w.write_str(">")?;
+            if !el.inner_html.is_empty() {
+                w.write_str(&el.inner_html)?;
+            } else {
+                for child in &el.children {
+                    write_node_html(child, w)?;
+                }
+            }
+            w.write_str("</")?;
+            w.write_str(&el.tag)?;
+            w.write_str(">")?;
+        }
+        Node::Text(text) => write_escaped_text(text, w)?,
+        Node::Fragment(nodes) => {
+            for node in nodes {
+                write_node_html(node, w)?;
+            }
+        }
+        Node::Comment(comment) => {
+            w.write_str("<!--")?;
+            w.write_str(comment)?;
+            w.write_str("-->")?;
+        }
+        Node::Static(html) => w.write_str(html)?,
+        Node::Empty => {}
+    }
+    Ok(())
 }
 
 /// Helper function to conditionally join CSS classes
@@ -296,33 +248,41 @@ impl<T: ToString> OptionAttribute for Option<T> {
 pub struct Element {
     pub key: String,
     pub tag: Cow<'static, str>,
-    pub attributes: BTreeMap<String, String>,
+    pub attributes: Vec<(String, String)>,
     pub inner_html: String,
     pub children: Vec<Node>,
     #[cfg(feature = "wasm")]
-    pub events: BTreeMap<String, EventCallback>,
+    pub events: Vec<(String, EventCallback)>,
     #[cfg(not(feature = "wasm"))]
     #[allow(unused)]
-    pub events: BTreeMap<String, String>,
+    pub events: Vec<(String, String)>,
 }
 
 impl Element {
     pub fn parse_tag_with_attributes(
         key: &str,
         tag: &'static str,
-        attributes: BTreeMap<String, String>,
-        #[cfg(feature = "wasm")] events: BTreeMap<String, EventCallback>,
-        #[cfg(not(feature = "wasm"))] events: BTreeMap<String, String>,
+        attributes: Vec<(String, String)>,
+        #[cfg(feature = "wasm")] events: Vec<(String, EventCallback)>,
+        #[cfg(not(feature = "wasm"))] events: Vec<(String, String)>,
         inner_html: &str,
         children: Vec<Node>,
     ) -> Node {
         Node::Element(Element {
             tag: Cow::Borrowed(tag),
-            key: key.to_string(),
+            key: if key.is_empty() {
+                String::new()
+            } else {
+                key.to_string()
+            },
             attributes,
             events,
             children,
-            inner_html: inner_html.to_string(),
+            inner_html: if inner_html.is_empty() {
+                String::new()
+            } else {
+                inner_html.to_string()
+            },
         })
     }
 
@@ -334,7 +294,7 @@ impl Element {
         &self.tag
     }
 
-    pub fn attributes(&self) -> &BTreeMap<String, String> {
+    pub fn attributes(&self) -> &[(String, String)] {
         &self.attributes
     }
 
@@ -347,12 +307,12 @@ impl Element {
     }
 
     #[cfg(not(feature = "wasm"))]
-    pub fn events(&self) -> &BTreeMap<String, String> {
+    pub fn events(&self) -> &[(String, String)] {
         &self.events
     }
 
     #[cfg(feature = "wasm")]
-    pub fn events(&self) -> &BTreeMap<String, EventCallback> {
+    pub fn events(&self) -> &[(String, EventCallback)] {
         &self.events
     }
 }
@@ -392,6 +352,15 @@ pub trait Component {
 
     /// Renders the component with the given props
     fn render(props: &Self::Props) -> Node;
+
+    /// Renders the component by taking ownership of props (avoids cloning children).
+    /// Default implementation delegates to `render(&props)`.
+    fn render_owned(props: Self::Props) -> Node
+    where
+        Self::Props: Sized,
+    {
+        Self::render(&props)
+    }
 }
 
 #[derive(Default)]
@@ -467,16 +436,14 @@ impl Node {
     /// ```
     pub fn to_html(&self) -> String {
         let capacity = self.estimate_html_size();
-        let mut writer = HtmlWriter::with_capacity(capacity);
-        writer.write_node(self);
-        writer.finish()
+        let mut buffer = String::with_capacity(capacity);
+        write_node_html(self, &mut buffer).unwrap();
+        buffer
     }
 
     /// Writes this node's HTML to an existing HtmlWriter.
-    ///
-    /// This is useful for composing multiple nodes efficiently.
     pub fn write_to(&self, writer: &mut HtmlWriter) {
-        writer.write_node(self);
+        write_node_html(self, &mut writer.buffer).unwrap();
     }
 
     /// Estimates the HTML size for capacity pre-allocation.
@@ -688,8 +655,7 @@ where
 
 impl Display for Node {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        // Use the optimized to_html() method and write the result
-        write!(f, "{}", self.to_html())
+        write_node_html(self, f)
     }
 }
 
@@ -742,20 +708,20 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloc::{borrow::Cow, collections::BTreeMap, string::String, vec};
+    use alloc::{borrow::Cow, string::String, vec};
 
     #[test]
     fn inner_html_takes_precedence_over_children_in_html_output() {
         let node = Node::Element(Element {
             key: String::new(),
             tag: Cow::Borrowed("div"),
-            attributes: BTreeMap::new(),
+            attributes: Vec::new(),
             inner_html: "<strong>unsafe</strong>".to_string(),
             children: vec![Node::Text("child".to_string())],
             #[cfg(feature = "wasm")]
-            events: BTreeMap::new(),
+            events: Vec::new(),
             #[cfg(not(feature = "wasm"))]
-            events: BTreeMap::new(),
+            events: Vec::new(),
         });
 
         assert_eq!(node.to_html(), "<div><strong>unsafe</strong></div>");
