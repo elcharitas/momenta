@@ -28,6 +28,7 @@ jobs:
             ~/.cargo/bin
             ~/.cargo/git
             ~/.cargo/registry
+            ~/.cache/trunk
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
@@ -35,6 +36,25 @@ jobs:
         run: |
           cargo install trunk@0.21.14 wasm-bindgen-cli@0.2.100 || true \
             && rustup target add wasm32-unknown-unknown
+
+      - name: Setup wasm-opt with bulk-memory support
+        run: |
+          # Run a quick trunk build to trigger wasm-opt download, then wrap it
+          CACHE_DIR="$HOME/.cache/trunk"
+          WASM_OPT_DIR=$(find "$CACHE_DIR" -name "wasm-opt-*" -type d 2>/dev/null | head -1)
+          if [ -z "$WASM_OPT_DIR" ]; then
+            # Pre-download binaryen to trunk's expected cache location
+            WASM_OPT_DIR="$CACHE_DIR/wasm-opt-version_123"
+            mkdir -p "$WASM_OPT_DIR/bin"
+            curl -sL "https://github.com/WebAssembly/binaryen/releases/download/version_123/binaryen-version_123-x86_64-linux.tar.gz" \
+              | tar xz -C /tmp
+            cp /tmp/binaryen-version_123/bin/wasm-opt "$WASM_OPT_DIR/bin/wasm-opt-real"
+          else
+            mv "$WASM_OPT_DIR/bin/wasm-opt" "$WASM_OPT_DIR/bin/wasm-opt-real"
+          fi
+          printf '#!/bin/bash\nexec "$(dirname "$0")/wasm-opt-real" --enable-bulk-memory "$@"\n' \
+            > "$WASM_OPT_DIR/bin/wasm-opt"
+          chmod +x "$WASM_OPT_DIR/bin/wasm-opt"
 
       - name: Build the Rust WASM app and all of its assets
         run: trunk build --config ./trunk.toml
