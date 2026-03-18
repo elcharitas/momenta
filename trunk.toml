@@ -6,9 +6,6 @@ manifest-path = "./docs/Cargo.toml"
 minify = "on_release"
 filehash = true
 
-[tools]
-wasm_opt = "version_120"
-
 [watch]
 watch = ["./docs/src", "./docs/static", "./docs/index.html", "./docs/globals.css", "./docs/tailwind.config.ts", "./tailwind.config.ts"]
 ignore = ["dist", "target"]
