@@ -39,6 +39,8 @@ fn App() -> Node {
             if let Some(el) = doc.document_element() {
                 let _ = el.class_list().remove_1("dark");
             };
+
+            sync_docs_theme("light");
         };
     });
 

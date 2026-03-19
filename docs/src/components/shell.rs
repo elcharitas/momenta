@@ -53,6 +53,9 @@ pub fn docs_href(path: &str) -> String {
 extern "C" {
     #[wasm_bindgen(js_namespace = hljs)]
     pub fn highlightAll();
+
+    #[wasm_bindgen(js_name = setDocsTheme)]
+    fn set_docs_theme(theme: &str);
 }
 
 pub fn toggle_dark_mode(theme: Signal<&'static str>) {
@@ -74,6 +77,11 @@ pub fn toggle_dark_mode(theme: Signal<&'static str>) {
             let _ = storage.set_item("theme", new_theme);
         }
     }
+    sync_docs_theme(new_theme);
+}
+
+pub fn sync_docs_theme(theme: &str) {
+    set_docs_theme(theme);
 }
 
 pub struct HeaderProps {
@@ -243,11 +251,11 @@ pub fn Header(props: &HeaderProps) -> Node {
                         on:click={toggle_theme}
                         class="p-2 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
                     >
-                        {when!(theme == "dark" =>
-                            <i class="fas fa-sun text-sm"></i>
-                        else
-                            <i class="fas fa-moon text-sm"></i>
-                        )}
+                        {if theme.get() == "dark" {
+                            rsx! { <i class="fas fa-sun text-sm"></i> }
+                        } else {
+                            rsx! { <i class="fas fa-moon text-sm"></i> }
+                        }}
                     </button>
 
                     <a href={GITHUB_LINK}

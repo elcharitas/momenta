@@ -57,7 +57,7 @@ jobs:
           chmod +x "$WASM_OPT_DIR/bin/wasm-opt"
 
       - name: Build the Rust WASM app and all of its assets
-        run: trunk build --config ./trunk.toml
+        run: trunk build --config ./trunk.toml --public-url /momenta/
 
       - name: Setup Pages
         uses: actions/configure-pages@v5

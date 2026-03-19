@@ -1,4 +1,4 @@
-use crate::pages::CounterExample;
+use crate::{components::highlightAll, pages::CounterExample};
 use alloc::{format, vec, vec::Vec};
 use momenta::prelude::*;
 
@@ -10,20 +10,38 @@ pub struct CodeBlockProps {
     pub highlight: Option<&'static str>,
 }
 
-#[component]
-pub fn CodeBlock(props: &CodeBlockProps) -> Node {
+fn render_code_block(
+    code: &'static str,
+    language: &'static str,
+    filename: Option<&'static str>,
+    container_class: &'static str,
+) -> Node {
     rsx! {
-        <div class="my-6 overflow-hidden rounded-lg border border-border/50">
-            {when!(let Some(filename) = props.filename =>
+        <div class={container_class}>
+            {when!(let Some(filename) = filename =>
                 <div class="flex items-center border-b border-border/40 bg-card px-4 py-2">
                     <span class="text-xs font-mono text-muted-foreground">{filename}</span>
                 </div>
             )}
             <pre class="bg-card overflow-x-auto m-0 p-0">
-                <code class={format!("language-{} text-[13px] leading-relaxed", props.language)}>{props.code}</code>
+                <code class={format!("language-{} text-[13px] leading-relaxed", language)}>{code}</code>
             </pre>
         </div>
     }
+}
+
+#[component]
+pub fn CodeBlock(props: &CodeBlockProps) -> Node {
+    create_effect(|| {
+        highlightAll();
+    });
+
+    render_code_block(
+        props.code,
+        props.language,
+        props.filename,
+        "my-6 overflow-hidden rounded-lg border border-border/50",
+    )
 }
 
 pub struct NoteProps {
@@ -141,6 +159,13 @@ pub struct ShowcaseProps {
 #[component]
 pub fn Showcase(props: &ShowcaseProps) -> Node {
     let show_code = create_signal(false);
+
+    create_effect(move || {
+        if show_code.get() {
+            highlightAll();
+        }
+    });
+
     rsx! {
         <div id={props.id} class="mb-8 scroll-mt-20">
             <h3 class="text-[15px] font-semibold tracking-tight mb-1">{props.title}</h3>
@@ -158,9 +183,12 @@ pub fn Showcase(props: &ShowcaseProps) -> Node {
                         {if show_code.get() { "Hide Code" } else { "View Code" }}
                     </button>
                     {when!(show_code =>
-                        <pre class="bg-card overflow-x-auto m-0 p-0 border-t border-border/40">
-                            <code class="language-rust text-[13px] leading-relaxed">{props.code}</code>
-                        </pre>
+                        {render_code_block(
+                            props.code,
+                            "rust",
+                            None,
+                            "overflow-hidden border-t border-border/40",
+                        )}
                     )}
                 </div>
             </div>
