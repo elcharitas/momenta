@@ -10,38 +10,26 @@ pub struct CodeBlockProps {
     pub highlight: Option<&'static str>,
 }
 
-fn render_code_block(
-    code: &'static str,
-    language: &'static str,
-    filename: Option<&'static str>,
-    container_class: &'static str,
-) -> Node {
-    rsx! {
-        <div class={container_class}>
-            {when!(let Some(filename) = filename =>
-                <div class="flex items-center border-b border-border/40 bg-card px-4 py-2">
-                    <span class="text-xs font-mono text-muted-foreground">{filename}</span>
-                </div>
-            )}
-            <pre class="bg-card overflow-x-auto m-0 p-0">
-                <code class={format!("language-{} text-[13px] leading-relaxed", language)}>{code}</code>
-            </pre>
-        </div>
-    }
-}
-
 #[component]
 pub fn CodeBlock(props: &CodeBlockProps) -> Node {
     create_effect(|| {
         highlightAll();
     });
 
-    render_code_block(
-        props.code,
-        props.language,
-        props.filename,
-        "my-6 overflow-hidden rounded-lg border border-border/50",
-    )
+    let filename = props.filename.filter(|filename| !filename.is_empty());
+
+    rsx! {
+        <div class="my-6 overflow-hidden rounded-lg border border-border/50">
+            {when!(let Some(filename) = filename =>
+                <div class="flex items-center border-b border-border/40 bg-card px-4 py-2">
+                    <span class="text-xs font-mono text-muted-foreground">{filename}</span>
+                </div>
+            )}
+            <pre class="bg-card overflow-x-auto m-0 p-0">
+                <code class={format!("language-{} text-[13px] leading-relaxed", props.language)}>{props.code}</code>
+            </pre>
+        </div>
+    }
 }
 
 pub struct NoteProps {
@@ -183,12 +171,11 @@ pub fn Showcase(props: &ShowcaseProps) -> Node {
                         {if show_code.get() { "Hide Code" } else { "View Code" }}
                     </button>
                     {when!(show_code =>
-                        {render_code_block(
-                            props.code,
-                            "rust",
-                            None,
-                            "overflow-hidden border-t border-border/40",
-                        )}
+                        <div class="overflow-hidden border-t border-border/40">
+                            <pre class="bg-card overflow-x-auto m-0 p-0">
+                                <code class="language-rust text-[13px] leading-relaxed">{props.code}</code>
+                            </pre>
+                        </div>
                     )}
                 </div>
             </div>

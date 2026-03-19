@@ -90,6 +90,75 @@ pub struct HeaderProps {
     pub current_path: Signal<String>,
 }
 
+fn header_nav_is_active(current: &str, path: &str) -> bool {
+    match path {
+        "/getting-started" => {
+            current != "/"
+                && !matches!(
+                    current,
+                    "/signals" | "/computed-signals" | "/effects" | "/resources"
+                )
+                && !current.starts_with("/examples")
+                && !current.starts_with("/ui")
+        }
+        "/signals" => matches!(
+            current,
+            "/signals" | "/computed-signals" | "/effects" | "/resources"
+        ),
+        "/examples" => current == "/examples" || current.starts_with("/examples/"),
+        "/ui" => current == "/ui" || current.starts_with("/ui/"),
+        _ => current == path,
+    }
+}
+
+pub struct HeaderNavLinkProps {
+    pub current_path: Signal<String>,
+    pub path: &'static str,
+    pub label: &'static str,
+}
+
+#[component]
+pub fn HeaderNavLink(props: &HeaderNavLinkProps) -> Node {
+    let is_active = header_nav_is_active(&props.current_path.get(), props.path);
+    let class = if is_active {
+        "px-3 py-1.5 text-[13px] font-medium rounded-md transition-colors bg-primary/12 text-primary shadow-[inset_0_0_0_1px_rgba(59,130,246,0.18)]"
+    } else {
+        "px-3 py-1.5 text-[13px] font-medium rounded-md transition-colors hover:bg-muted text-muted-foreground hover:text-foreground"
+    };
+    let aria_current = if is_active { "page" } else { "false" };
+
+    rsx! {
+        <a href={docs_href(props.path)} class={class} aria_current={aria_current}>
+            {props.label}
+        </a>
+    }
+}
+
+pub struct ThemeSwitchButtonProps {
+    pub theme: Signal<&'static str>,
+}
+
+#[component]
+pub fn ThemeSwitchButton(props: &ThemeSwitchButtonProps) -> Node {
+    let theme = props.theme;
+    let toggle_theme = move |_| {
+        toggle_dark_mode(theme);
+    };
+
+    rsx! {
+        <button
+            on:click={toggle_theme}
+            class="p-2 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+        >
+            {when!(theme == "dark" =>
+                <i class="fas fa-sun text-sm"></i>
+            else
+                <i class="fas fa-moon text-sm"></i>
+            )}
+        </button>
+    }
+}
+
 #[component]
 pub fn Header(props: &HeaderProps) -> Node {
     let theme = props.theme;
@@ -97,49 +166,6 @@ pub fn Header(props: &HeaderProps) -> Node {
     let current_path = props.current_path;
     let search_open = create_signal(false);
     let query = create_signal(String::new());
-
-    let toggle_theme = move |_| {
-        toggle_dark_mode(theme);
-    };
-
-    let header_nav_is_active = move |path: &'static str| {
-        let current = current_path.get();
-
-        match path {
-            "/getting-started" => {
-                current != "/"
-                    && !matches!(
-                        current.as_str(),
-                        "/signals" | "/computed-signals" | "/effects" | "/resources"
-                    )
-                    && !current.starts_with("/examples")
-                    && !current.starts_with("/ui")
-            }
-            "/signals" => matches!(
-                current.as_str(),
-                "/signals" | "/computed-signals" | "/effects" | "/resources"
-            ),
-            "/examples" => current == "/examples" || current.starts_with("/examples/"),
-            "/ui" => current == "/ui" || current.starts_with("/ui/"),
-            _ => current == path,
-        }
-    };
-
-    let header_nav_link = move |path: &'static str, label: &'static str| {
-        let is_active = header_nav_is_active(path);
-        let class = if is_active {
-            "px-3 py-1.5 text-[13px] font-medium rounded-md transition-colors bg-primary/12 text-primary shadow-[inset_0_0_0_1px_rgba(59,130,246,0.18)]"
-        } else {
-            "px-3 py-1.5 text-[13px] font-medium rounded-md transition-colors hover:bg-muted text-muted-foreground hover:text-foreground"
-        };
-        let aria_current = if is_active { "page" } else { "false" };
-
-        rsx! {
-            <a href={docs_href(path)} class={class} aria_current={aria_current}>
-                {label}
-            </a>
-        }
-    };
 
     let nav_items: Vec<(&str, &str, &str)> = vec![
         (
@@ -251,10 +277,10 @@ pub fn Header(props: &HeaderProps) -> Node {
                 </a>
 
                 <nav class="hidden md:flex items-center gap-0.5 ml-8">
-                    {header_nav_link("/getting-started", "Docs")}
-                    {header_nav_link("/signals", "Signals")}
-                    {header_nav_link("/examples", "Examples")}
-                    {header_nav_link("/ui", "UI Library")}
+                    <HeaderNavLink {current_path} path="/getting-started" label="Docs" />
+                    <HeaderNavLink {current_path} path="/signals" label="Signals" />
+                    <HeaderNavLink {current_path} path="/examples" label="Examples" />
+                    <HeaderNavLink {current_path} path="/ui" label="UI Library" />
                     <span class="mx-1 h-4 w-px bg-border/70"></span>
                     <a href={docs_href("/static/llms.txt")} class="px-3 py-1.5 text-[13px] font-medium rounded-md transition-colors hover:bg-muted text-muted-foreground hover:text-foreground">
                         LLMs.txt
@@ -280,16 +306,7 @@ pub fn Header(props: &HeaderProps) -> Node {
                         <i class="fas fa-search text-sm"></i>
                     </button>
 
-                    <button
-                        on:click={toggle_theme}
-                        class="p-2 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
-                    >
-                        {if theme.get() == "dark" {
-                            rsx! { <i class="fas fa-sun text-sm"></i> }
-                        } else {
-                            rsx! { <i class="fas fa-moon text-sm"></i> }
-                        }}
-                    </button>
+                          <ThemeSwitchButton {theme} />
 
                     <a href={GITHUB_LINK}
                        class="p-2 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
