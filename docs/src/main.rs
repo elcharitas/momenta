@@ -46,7 +46,7 @@ fn App() -> Node {
 
     rsx! {
         <div class="min-h-screen bg-background text-foreground transition-colors duration-200">
-            <Header {theme} {mobile_menu_open} />
+            <Header {theme} {mobile_menu_open} current_path={current_path} />
 
             <div class="flex pt-14">
                 {when!(current_path.get() != "/" =>
