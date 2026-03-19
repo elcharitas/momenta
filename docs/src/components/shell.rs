@@ -148,6 +148,35 @@ pub fn Header(props: &HeaderProps) -> Node {
             "RealWorld",
             "Full-stack blog platform",
         ),
+        ("/ui", "UI Library", "Browse 113 ready-to-use UI components"),
+        ("/ui/buttons", "Buttons", "Interactive button components"),
+        ("/ui/badges", "Badges & Tags", "Status descriptors"),
+        (
+            "/ui/alerts",
+            "Alerts",
+            "Feedback messages and notifications",
+        ),
+        ("/ui/cards", "Cards", "Flexible content containers"),
+        (
+            "/ui/inputs",
+            "Forms & Inputs",
+            "Form controls for user input",
+        ),
+        ("/ui/navigation", "Navigation", "Navigation components"),
+        (
+            "/ui/data-display",
+            "Data Display",
+            "Tables, lists, and data views",
+        ),
+        ("/ui/layout", "Layout", "Page layout components"),
+        ("/ui/feedback", "Feedback", "Loading and state indicators"),
+        ("/ui/overlays", "Overlays", "Modals, drawers, and panels"),
+        ("/ui/marketing", "Marketing", "Landing page sections"),
+        (
+            "/ui/typography",
+            "Typography",
+            "Text and formatting components",
+        ),
     ];
 
     let modal_class = if search_open.get() {
@@ -181,6 +210,9 @@ pub fn Header(props: &HeaderProps) -> Node {
                     </a>
                     <a href={docs_href("/examples")} class="px-3 py-1.5 text-[13px] font-medium rounded-md transition-colors hover:bg-muted text-muted-foreground hover:text-foreground">
                         Examples
+                    </a>
+                    <a href={docs_href("/ui")} class="px-3 py-1.5 text-[13px] font-medium rounded-md transition-colors hover:bg-muted text-muted-foreground hover:text-foreground">
+                        UI Library
                     </a>
                     <span class="mx-1 h-4 w-px bg-border/70"></span>
                     <a href={docs_href("/static/llms.txt")} class="px-3 py-1.5 text-[13px] font-medium rounded-md transition-colors hover:bg-muted text-muted-foreground hover:text-foreground">
@@ -358,11 +390,32 @@ pub fn Navigation(props: &NavigationProps) -> Node {
                 nav_link("/examples/hackernews", "Hacker News"),
                 nav_link("/examples/realworld", "RealWorld"),
             ])}
+
+            {section("UI Library", vec![
+                nav_link("/ui", "Overview"),
+                nav_link("/ui/buttons", "Buttons"),
+                nav_link("/ui/badges", "Badges & Tags"),
+                nav_link("/ui/alerts", "Alerts"),
+                nav_link("/ui/cards", "Cards"),
+                nav_link("/ui/inputs", "Forms & Inputs"),
+                nav_link("/ui/navigation", "Navigation"),
+                nav_link("/ui/data-display", "Data Display"),
+                nav_link("/ui/layout", "Layout"),
+                nav_link("/ui/feedback", "Feedback"),
+                nav_link("/ui/overlays", "Overlays"),
+                nav_link("/ui/marketing", "Marketing"),
+                nav_link("/ui/typography", "Typography"),
+            ])}
         </nav>
     }
 }
 
 pub fn docs_on_this_page_sections(path: &str) -> Vec<(&'static str, &'static str)> {
+    if path.starts_with("/ui/") {
+        let category = &path[4..];
+        return crate::pages::ui_library::ui_library_on_this_page(category);
+    }
+
     if path.starts_with("/routing") {
         return vec![
             ("introduction", "Introduction"),
@@ -527,7 +580,7 @@ pub fn OnThisPage(props: &OnThisPageProps) -> Node {
             <nav class={if props.compact { "on-this-page-links on-this-page-links-compact" } else { "on-this-page-links" }}>
                 {sections.iter().map(|(id, label)| rsx! {
                     <a href={format!("#{}", id)} class="on-this-page-link">{*label}</a>
-                }).collect::<Vec<_>>()}
+                })}
             </nav>
         </div>
     }
