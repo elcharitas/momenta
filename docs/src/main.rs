@@ -23,25 +23,30 @@ fn App() -> Node {
     });
 
     create_effect(move || {
-        if let Some(window) = web_sys::window() {
-            if let Ok(Some(storage)) = window.local_storage() {
-                if let Ok(Some(saved)) = storage.get_item("theme") {
-                    if saved == "light" {
-                        theme.set("light");
-                        if let Some(doc) = window.document() {
-                            if let Some(el) = doc.document_element() {
-                                let _ = el.class_list().remove_1("dark");
-                            }
-                        }
-                    }
-                }
+        let Some(window) = web_sys::window() else {
+            return;
+        };
+        let Ok(Some(storage)) = window.local_storage() else {
+            return;
+        };
+        if let Ok(Some(saved)) = storage.get_item("theme") {
+            if saved != "light" {
+                return;
             }
-        }
+            theme.set("light");
+
+            let Some(doc) = window.document() else { return };
+            if let Some(el) = doc.document_element() {
+                let _ = el.class_list().remove_1("dark");
+            };
+
+            sync_docs_theme("light");
+        };
     });
 
     rsx! {
         <div class="min-h-screen bg-background text-foreground transition-colors duration-200">
-            <Header {theme} {mobile_menu_open} />
+            <Header {theme} {mobile_menu_open} current_path={current_path} />
 
             <div class="flex pt-14">
                 {when!(current_path.get() != "/" =>
@@ -99,6 +104,19 @@ fn App() -> Node {
                         "/examples/todomvc" => |_| rsx! { <TodoMVCPage /> },
                         "/examples/hackernews" => |_| rsx! { <HackerNewsPage /> },
                         "/examples/realworld" => |_| rsx! { <RealWorldPage /> },
+                        "/ui" => |_| rsx! { <UIOverviewPage /> },
+                        "/ui/buttons" => |_| rsx! { <ButtonsPage /> },
+                        "/ui/badges" => |_| rsx! { <BadgesPage /> },
+                        "/ui/alerts" => |_| rsx! { <AlertsPage /> },
+                        "/ui/cards" => |_| rsx! { <CardsPage /> },
+                        "/ui/inputs" => |_| rsx! { <InputsPage /> },
+                        "/ui/navigation" => |_| rsx! { <NavComponentsPage /> },
+                        "/ui/data-display" => |_| rsx! { <DataDisplayPage /> },
+                        "/ui/layout" => |_| rsx! { <LayoutPage /> },
+                        "/ui/feedback" => |_| rsx! { <FeedbackPage /> },
+                        "/ui/overlays" => |_| rsx! { <OverlaysPage /> },
+                        "/ui/marketing" => |_| rsx! { <MarketingPage /> },
+                        "/ui/typography" => |_| rsx! { <TypographyPage /> },
                     })}
                 </main>
 

@@ -53,6 +53,9 @@ pub fn docs_href(path: &str) -> String {
 extern "C" {
     #[wasm_bindgen(js_namespace = hljs)]
     pub fn highlightAll();
+
+    #[wasm_bindgen(js_name = setDocsTheme)]
+    fn set_docs_theme(theme: &str);
 }
 
 pub fn toggle_dark_mode(theme: Signal<&'static str>) {
@@ -74,23 +77,95 @@ pub fn toggle_dark_mode(theme: Signal<&'static str>) {
             let _ = storage.set_item("theme", new_theme);
         }
     }
+    sync_docs_theme(new_theme);
+}
+
+pub fn sync_docs_theme(theme: &str) {
+    set_docs_theme(theme);
 }
 
 pub struct HeaderProps {
     pub theme: Signal<&'static str>,
     pub mobile_menu_open: Signal<bool>,
+    pub current_path: Signal<String>,
+}
+
+fn header_nav_is_active(current: &str, path: &str) -> bool {
+    match path {
+        "/getting-started" => {
+            current != "/"
+                && !matches!(
+                    current,
+                    "/signals" | "/computed-signals" | "/effects" | "/resources"
+                )
+                && !current.starts_with("/examples")
+                && !current.starts_with("/ui")
+        }
+        "/signals" => matches!(
+            current,
+            "/signals" | "/computed-signals" | "/effects" | "/resources"
+        ),
+        "/examples" => current == "/examples" || current.starts_with("/examples/"),
+        "/ui" => current == "/ui" || current.starts_with("/ui/"),
+        _ => current == path,
+    }
+}
+
+pub struct HeaderNavLinkProps {
+    pub current_path: Signal<String>,
+    pub path: &'static str,
+    pub label: &'static str,
+}
+
+#[component]
+pub fn HeaderNavLink(props: &HeaderNavLinkProps) -> Node {
+    let is_active = header_nav_is_active(&props.current_path.get(), props.path);
+    let class = if is_active {
+        "px-3 py-1.5 text-[13px] font-medium rounded-md transition-colors bg-primary/12 text-primary shadow-[inset_0_0_0_1px_rgba(59,130,246,0.18)]"
+    } else {
+        "px-3 py-1.5 text-[13px] font-medium rounded-md transition-colors hover:bg-muted text-muted-foreground hover:text-foreground"
+    };
+    let aria_current = if is_active { "page" } else { "false" };
+
+    rsx! {
+        <a href={docs_href(props.path)} class={class} aria_current={aria_current}>
+            {props.label}
+        </a>
+    }
+}
+
+pub struct ThemeSwitchButtonProps {
+    pub theme: Signal<&'static str>,
+}
+
+#[component]
+pub fn ThemeSwitchButton(props: &ThemeSwitchButtonProps) -> Node {
+    let theme = props.theme;
+    let toggle_theme = move |_| {
+        toggle_dark_mode(theme);
+    };
+
+    rsx! {
+        <button
+            on:click={toggle_theme}
+            class="p-2 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+        >
+            {when!(theme == "dark" =>
+                <i class="fas fa-sun text-sm"></i>
+            else
+                <i class="fas fa-moon text-sm"></i>
+            )}
+        </button>
+    }
 }
 
 #[component]
 pub fn Header(props: &HeaderProps) -> Node {
     let theme = props.theme;
     let mobile_menu_open = props.mobile_menu_open;
+    let current_path = props.current_path;
     let search_open = create_signal(false);
     let query = create_signal(String::new());
-
-    let toggle_theme = move |_| {
-        toggle_dark_mode(theme);
-    };
 
     let nav_items: Vec<(&str, &str, &str)> = vec![
         (
@@ -148,6 +223,35 @@ pub fn Header(props: &HeaderProps) -> Node {
             "RealWorld",
             "Full-stack blog platform",
         ),
+        ("/ui", "UI Library", "Browse 113 ready-to-use UI components"),
+        ("/ui/buttons", "Buttons", "Interactive button components"),
+        ("/ui/badges", "Badges & Tags", "Status descriptors"),
+        (
+            "/ui/alerts",
+            "Alerts",
+            "Feedback messages and notifications",
+        ),
+        ("/ui/cards", "Cards", "Flexible content containers"),
+        (
+            "/ui/inputs",
+            "Forms & Inputs",
+            "Form controls for user input",
+        ),
+        ("/ui/navigation", "Navigation", "Navigation components"),
+        (
+            "/ui/data-display",
+            "Data Display",
+            "Tables, lists, and data views",
+        ),
+        ("/ui/layout", "Layout", "Page layout components"),
+        ("/ui/feedback", "Feedback", "Loading and state indicators"),
+        ("/ui/overlays", "Overlays", "Modals, drawers, and panels"),
+        ("/ui/marketing", "Marketing", "Landing page sections"),
+        (
+            "/ui/typography",
+            "Typography",
+            "Text and formatting components",
+        ),
     ];
 
     let modal_class = if search_open.get() {
@@ -173,15 +277,10 @@ pub fn Header(props: &HeaderProps) -> Node {
                 </a>
 
                 <nav class="hidden md:flex items-center gap-0.5 ml-8">
-                    <a href={docs_href("/getting-started")} class="px-3 py-1.5 text-[13px] font-medium rounded-md transition-colors hover:bg-muted text-muted-foreground hover:text-foreground">
-                        Docs
-                    </a>
-                    <a href={docs_href("/signals")} class="px-3 py-1.5 text-[13px] font-medium rounded-md transition-colors hover:bg-muted text-muted-foreground hover:text-foreground">
-                        Signals
-                    </a>
-                    <a href={docs_href("/examples")} class="px-3 py-1.5 text-[13px] font-medium rounded-md transition-colors hover:bg-muted text-muted-foreground hover:text-foreground">
-                        Examples
-                    </a>
+                    <HeaderNavLink {current_path} path="/getting-started" label="Docs" />
+                    <HeaderNavLink {current_path} path="/signals" label="Signals" />
+                    <HeaderNavLink {current_path} path="/examples" label="Examples" />
+                    <HeaderNavLink {current_path} path="/ui" label="UI Library" />
                     <span class="mx-1 h-4 w-px bg-border/70"></span>
                     <a href={docs_href("/static/llms.txt")} class="px-3 py-1.5 text-[13px] font-medium rounded-md transition-colors hover:bg-muted text-muted-foreground hover:text-foreground">
                         LLMs.txt
@@ -207,16 +306,7 @@ pub fn Header(props: &HeaderProps) -> Node {
                         <i class="fas fa-search text-sm"></i>
                     </button>
 
-                    <button
-                        on:click={toggle_theme}
-                        class="p-2 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
-                    >
-                        {when!(theme == "dark" =>
-                            <i class="fas fa-sun text-sm"></i>
-                        else
-                            <i class="fas fa-moon text-sm"></i>
-                        )}
-                    </button>
+                          <ThemeSwitchButton {theme} />
 
                     <a href={GITHUB_LINK}
                        class="p-2 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
@@ -358,11 +448,32 @@ pub fn Navigation(props: &NavigationProps) -> Node {
                 nav_link("/examples/hackernews", "Hacker News"),
                 nav_link("/examples/realworld", "RealWorld"),
             ])}
+
+            {section("UI Library", vec![
+                nav_link("/ui", "Overview"),
+                nav_link("/ui/buttons", "Buttons"),
+                nav_link("/ui/badges", "Badges & Tags"),
+                nav_link("/ui/alerts", "Alerts"),
+                nav_link("/ui/cards", "Cards"),
+                nav_link("/ui/inputs", "Forms & Inputs"),
+                nav_link("/ui/navigation", "Navigation"),
+                nav_link("/ui/data-display", "Data Display"),
+                nav_link("/ui/layout", "Layout"),
+                nav_link("/ui/feedback", "Feedback"),
+                nav_link("/ui/overlays", "Overlays"),
+                nav_link("/ui/marketing", "Marketing"),
+                nav_link("/ui/typography", "Typography"),
+            ])}
         </nav>
     }
 }
 
 pub fn docs_on_this_page_sections(path: &str) -> Vec<(&'static str, &'static str)> {
+    if path.starts_with("/ui/") {
+        let category = &path[4..];
+        return crate::pages::ui_library::ui_library_on_this_page(category);
+    }
+
     if path.starts_with("/routing") {
         return vec![
             ("introduction", "Introduction"),
@@ -527,7 +638,7 @@ pub fn OnThisPage(props: &OnThisPageProps) -> Node {
             <nav class={if props.compact { "on-this-page-links on-this-page-links-compact" } else { "on-this-page-links" }}>
                 {sections.iter().map(|(id, label)| rsx! {
                     <a href={format!("#{}", id)} class="on-this-page-link">{*label}</a>
-                }).collect::<Vec<_>>()}
+                })}
             </nav>
         </div>
     }

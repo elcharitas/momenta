@@ -1,4 +1,4 @@
-use crate::pages::CounterExample;
+use crate::{components::highlightAll, pages::CounterExample};
 use alloc::{format, vec, vec::Vec};
 use momenta::prelude::*;
 
@@ -12,9 +12,15 @@ pub struct CodeBlockProps {
 
 #[component]
 pub fn CodeBlock(props: &CodeBlockProps) -> Node {
+    create_effect(|| {
+        highlightAll();
+    });
+
+    let filename = props.filename.filter(|filename| !filename.is_empty());
+
     rsx! {
         <div class="my-6 overflow-hidden rounded-lg border border-border/50">
-            {when!(let Some(filename) = props.filename =>
+            {when!(let Some(filename) = filename =>
                 <div class="flex items-center border-b border-border/40 bg-card px-4 py-2">
                     <span class="text-xs font-mono text-muted-foreground">{filename}</span>
                 </div>
@@ -88,19 +94,17 @@ pub fn DocPageHeader(props: &DocPageHeaderProps) -> Node {
                         {props.summary}
                     </p>
                     <div class="mt-5 flex flex-wrap gap-2">
-                        {props.chips.iter().map(|chip| rsx! {
-                            <span class="doc-chip">{*chip}</span>
-                        }).collect::<Vec<_>>()}
+                        {props.chips.iter().map(|chip| <span class="doc-chip">{*chip}</span>)}
                     </div>
                 </div>
 
                 <div class="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
-                    {props.stats.iter().map(|(label, value)| rsx! {
+                    {props.stats.iter().map(|(label, value)|
                         <div class="doc-stat-card">
                             <div class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/80">{*label}</div>
                             <div class="mt-1.5 text-[13px] font-medium leading-5 text-foreground">{*value}</div>
                         </div>
-                    }).collect::<Vec<_>>()}
+                    )}
                 </div>
             </div>
         </header>
@@ -128,6 +132,74 @@ pub fn TheoryCard(props: &TheoryCardProps) -> Node {
                     </div>
                 </div>
             </div>
+        </div>
+    }
+}
+
+pub struct ShowcaseProps {
+    pub id: &'static str,
+    pub title: &'static str,
+    pub description: &'static str,
+    pub code: &'static str,
+    pub children: Vec<Node>,
+}
+
+#[component]
+pub fn Showcase(props: &ShowcaseProps) -> Node {
+    let show_code = create_signal(false);
+
+    create_effect(move || {
+        if show_code.get() {
+            highlightAll();
+        }
+    });
+
+    rsx! {
+        <div id={props.id} class="mb-8 scroll-mt-20">
+            <h3 class="text-[15px] font-semibold tracking-tight mb-1">{props.title}</h3>
+            <p class="text-[13px] text-muted-foreground mb-3">{props.description}</p>
+            <div class="rounded-xl border border-border/50 overflow-hidden">
+                <div class="p-6 bg-card/30">
+                    {&props.children}
+                </div>
+                <div class="border-t border-border/40">
+                    <button
+                        class="w-full px-4 py-2 text-xs font-medium text-muted-foreground hover:text-foreground bg-card hover:bg-muted/50 transition-colors flex items-center justify-center gap-2"
+                        on:click={move |_| show_code.set(!show_code.get())}
+                    >
+                        <i class={if show_code.get() { "fas fa-chevron-up text-[10px]" } else { "fas fa-code text-[10px]" }}></i>
+                        {if show_code.get() { "Hide Code" } else { "View Code" }}
+                    </button>
+                    {when!(show_code =>
+                        <div class="overflow-hidden border-t border-border/40">
+                            <pre class="bg-card overflow-x-auto m-0 p-0">
+                                <code class="language-rust text-[13px] leading-relaxed">{props.code}</code>
+                            </pre>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    }
+}
+
+pub struct CategoryHeaderProps {
+    pub title: &'static str,
+    pub description: &'static str,
+    pub count: i32,
+}
+
+#[component]
+pub fn CategoryHeader(props: &CategoryHeaderProps) -> Node {
+    rsx! {
+        <div class="mb-8">
+            <div class="flex items-center gap-3 mb-2">
+                <h2 class="text-2xl font-bold tracking-tight">{props.title}</h2>
+                <span class="inline-flex items-center rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
+                    {format!("{} components", props.count)}
+                </span>
+            </div>
+            <p class="text-sm text-muted-foreground leading-relaxed max-w-2xl">{props.description}</p>
         </div>
     }
 }

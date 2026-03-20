@@ -10,13 +10,14 @@
 		<meta name="author" content="Momenta Team" />
 		<meta name="theme-color" content="#0f1117" />
 		<title>Momenta - The Reactive Rust UI Framework</title>
+		<base data-trunk-public-url />
 		<link rel="preconnect" href="https://fonts.googleapis.com" />
 		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 		<link
 			href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap"
 			rel="stylesheet" />
 		<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
-		<link rel="stylesheet"
+		<link id="hljs-theme" rel="stylesheet"
 			href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark-dimmed.min.css" />
 		<link data-trunk rel="rust" />
 		<link data-trunk rel="tailwind-css" href="./globals.css" />
@@ -70,6 +71,30 @@
 		<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
 		<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/rust.min.js"></script>
 		<script>
+			function setDocsTheme ( theme ) {
+				var isLight = theme === 'light';
+				var root = document.documentElement;
+				var metaTheme = document.querySelector( 'meta[name="theme-color"]' );
+				var highlightTheme = document.getElementById( 'hljs-theme' );
+
+				if ( root ) {
+					root.classList.toggle( 'dark', !isLight );
+				}
+
+				if ( metaTheme ) {
+					metaTheme.setAttribute( 'content', isLight ? '#ffffff' : '#0f1117' );
+				}
+
+				if ( highlightTheme ) {
+					highlightTheme.setAttribute(
+						'href',
+						isLight
+							? 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github.min.css'
+							: 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark-dimmed.min.css'
+					);
+				}
+			}
+
 			( function () {
 				var params = new URLSearchParams( window.location.search );
 				var redirectedPath = params.get( 'p' );
@@ -90,9 +115,7 @@
 				window.history.replaceState( null, '', nextUrl );
 			} )();
 
-			if ( localStorage.theme === 'light' ) {
-				document.documentElement.classList.remove( 'dark' );
-			}
+			setDocsTheme( localStorage.theme === 'light' ? 'light' : 'dark' );
 			window.addEventListener( 'load', function () {
 				setTimeout( function () {
 					document.getElementById( 'loading' )?.classList.add( 'loaded' );
