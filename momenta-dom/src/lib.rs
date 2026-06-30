@@ -3516,5 +3516,87 @@ pub mod elements {
             /// ```<area target="_blank">```
             target: String,
         }
+
+        // ====================================================================
+        // SITEMAP XML ELEMENTS (https://www.sitemaps.org/protocol.html)
+        // ====================================================================
+
+        /// XML Sitemap `<urlset>` element - Root element of a sitemap document
+        ///
+        /// Example:
+        ///
+        /// ```<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">...</urlset>```
+        urlset {
+            /// The xmlns attribute declares the sitemap XML namespace
+            /// Example: xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+            xmlns: String,
+        }
+
+        /// XML Sitemap `<url>` element - Container for a single URL entry in a sitemap
+        ///
+        /// Example:
+        ///
+        /// ```<url><loc>https://example.com/page</loc><priority>0.8</priority></url>```
+        url {
+        }
+
+        /// XML Sitemap `<loc>` element - Specifies the URL of a page
+        ///
+        /// Must be a fully-qualified URL including protocol (http/https).
+        ///
+        /// Example:
+        ///
+        /// ```<loc>https://example.com/about</loc>```
+        loc {
+        }
+
+        /// XML Sitemap `<lastmod>` element - Date the page was last modified
+        ///
+        /// Should be in W3C Datetime format (YYYY-MM-DD or full datetime with timezone).
+        ///
+        /// Example:
+        ///
+        /// ```<lastmod>2024-01-15</lastmod>```
+        lastmod {
+        }
+
+        /// XML Sitemap `<changefreq>` element - How frequently the page is likely to change
+        ///
+        /// Valid values: always, hourly, daily, weekly, monthly, yearly, never
+        ///
+        /// Example:
+        ///
+        /// ```<changefreq>weekly</changefreq>```
+        changefreq {
+        }
+
+        /// XML Sitemap `<priority>` element - Priority of the URL relative to other URLs on the site
+        ///
+        /// Valid values are between 0.0 and 1.0. Default is 0.5.
+        ///
+        /// Example:
+        ///
+        /// ```<priority>0.8</priority>```
+        priority {
+        }
+
+        /// XML Sitemap Index `<sitemapindex>` element - Root element of a sitemap index file
+        ///
+        /// Example:
+        ///
+        /// ```<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">...</sitemapindex>```
+        sitemapindex {
+            /// The xmlns attribute declares the sitemap XML namespace
+            /// Example: xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+            xmlns: String,
+        }
+
+        /// XML Sitemap Index `<sitemap>` element - References a single sitemap file within a sitemap index
+        ///
+        /// Example:
+        ///
+        /// ```<sitemap><loc>https://example.com/sitemap1.xml</loc><lastmod>2024-01-01</lastmod></sitemap>```
+        sitemap {
+        }
     }
 }
