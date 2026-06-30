@@ -306,7 +306,7 @@ pub fn Header(props: &HeaderProps) -> Node {
                         <i class="fas fa-search text-sm"></i>
                     </button>
 
-                          <ThemeSwitchButton {theme} />
+                	<ThemeSwitchButton {theme} />
 
                     <a href={GITHUB_LINK}
                        class="p-2 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
@@ -636,7 +636,7 @@ pub fn OnThisPage(props: &OnThisPageProps) -> Node {
                 <h3 class="on-this-page-title">"On this page"</h3>
             </div>
             <nav class={if props.compact { "on-this-page-links on-this-page-links-compact" } else { "on-this-page-links" }}>
-                {sections.iter().map(|(id, label)| rsx! {
+                {sections.iter().map(|(id, label)| {
                     <a href={format!("#{}", id)} class="on-this-page-link">{*label}</a>
                 })}
             </nav>

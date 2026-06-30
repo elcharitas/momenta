@@ -201,13 +201,13 @@ let html = render_to_string(|| {
 
 ### SSR and Hydration
 
-Momenta's server API is intentionally small:
-- `render_to_string` for buffered HTML output
-- `render_to_chunks` for chunked or streamed HTML output
+Momenta's server rendering surface is intentionally small:
+- `render_to_string` for buffered HTML
+- `render_to_chunks` for streamed or chunked HTML
 - framework adapters in `momenta-ssr` for Axum, Actix, and Hyper
-- `render_to_hydration_string` when the client should resume from server markup
+- `render_to_hydration_string` when the browser should resume from server markup
 
-Hydratable rendering emits stable `data-momenta-*` markers and can embed serialized request data in an inline JSON script.
+Hydratable output includes stable `data-momenta-*` markers and can embed serialized request data in a JSON script tag.
 
 ```rust
 use momenta::prelude::*;
@@ -222,7 +222,7 @@ let html = render_to_hydration_string(
 );
 ```
 
-On the client, hydrate the existing DOM instead of replacing it:
+On the client, hydrate instead of remounting:
 
 ```rust
 use momenta::prelude::*;
@@ -239,9 +239,9 @@ fn main() {
 }
 ```
 
-If you do not need hydration, keep using `render_to_string` on the server and `render_root` in the browser.
+If you do not need resume support, keep using `render_to_string` on the server and `render_root` in the browser.
 
-Streaming is just as small:
+Streaming stays equally simple:
 
 ```rust
 use momenta::prelude::*;
@@ -253,7 +253,7 @@ let chunks = render_to_chunks(
 );
 ```
 
-For framework-specific response helpers, enable the corresponding `momenta-ssr` feature:
+Enable only the adapter feature you need:
 
 ```toml
 [dependencies]
