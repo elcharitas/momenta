@@ -101,7 +101,7 @@ pub fn render_to_hydration_string(
 pub fn render_hydration_state_script(script_id: &str, state_json: &str) -> String {
     let mut output = String::new();
     output.push_str("<script id=\"");
-    output.push_str(script_id);
+    output.push_str(&escape_attribute_value(script_id));
     output.push_str("\" type=\"application/json\">");
     output.push_str(&escape_script_content(state_json));
     output.push_str("</script>");
@@ -297,7 +297,7 @@ fn write_node_to_collector(node: &Node, collector: &mut ChunkCollector) {
         }
         Node::Comment(comment) => {
             collector.push_str("<!--");
-            collector.push_str(comment);
+            collector.push_str(&escape_comment(comment));
             collector.push_str("-->");
         }
         Node::Static(html) => collector.push_str(html),
@@ -334,7 +334,7 @@ fn write_node_to_collector_hydratable(
         }
         Node::Comment(comment) => {
             collector.push_str("<!--");
-            collector.push_str(comment);
+            collector.push_str(&escape_comment(comment));
             collector.push_str("-->");
         }
         Node::Static(html) => collector.push_str(html),
@@ -394,7 +394,7 @@ fn write_attribute(collector: &mut ChunkCollector, key: &str, value: &str) {
     collector.push_str(" ");
     collector.push_str(key);
     collector.push_str("=\"");
-    collector.push_str(value);
+    collector.push_str(&escape_attribute_value(value));
     collector.push_str("\"");
 }
 
@@ -432,6 +432,33 @@ fn write_escaped_text(text: &str, collector: &mut ChunkCollector) {
             _ => collector.push_char(ch),
         }
     }
+}
+
+/// Escape a value placed inside a double-quoted HTML attribute.
+///
+/// `"` and `&` must be escaped to prevent breakout; `<` and `>` are escaped
+/// for defense in depth. Used for both element attribute values and the
+/// `id="..."` of the hydration state <script>.
+fn escape_attribute_value(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        match c {
+            '\x26' => out.push_str("\x26amp;"),
+            '"' => out.push_str("\x26quot;"),
+            '<' => out.push_str("\x26lt;"),
+            '>' => out.push_str("\x26gt;"),
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
+/// Escape comment content so `-->` and `--!>` cannot form and break out.
+/// The HTML spec forbids `--` inside comments; splitting every `--` into
+/// `- -` is the minimal correct transformation.
+fn escape_comment(text: &str) -> String {
+    let n = text.replace("--!>", "- -!>").replace("-->", "- ->");
+    n.replace("--", "- -")
 }
 
 fn escape_script_content(text: &str) -> String {
@@ -584,4 +611,62 @@ mod tests {
             "<script id=\"state\" type=\"application/json\">\\u003c/script\\u003e\\u003cdiv\\u003e</script>"
         );
     }
+
+
+    #[test]
+    fn attribute_value_with_quote_does_not_inject_new_attribute() {
+        // A hostile value with `"` must be escaped so it cannot close the
+        // attribute and inject a new one. The quote becomes " inside the
+        // value; "onmouseover=" with an UNESCAPED quote must not appear.
+        let hostile = "\" onmouseover=\"alert(1)";
+        let node = Element::parse_tag_with_attributes(
+            "",
+            "div",
+            vec![("title".to_string(), hostile.to_string())],
+            Vec::new(),
+            "",
+            Vec::new(),
+        );
+        let html = render_to_string(|| node);
+        assert!(
+            !html.contains("onmouseover=\"alert"),
+            "attribute injection: unescaped quote created a new attribute: {}",
+            html
+        );
+        assert!(html.contains("&quot;"), "quote not escaped: {}", html);
+        assert!(html.contains("title="), "title missing: {}", html);
+    }
+
+    #[test]
+    fn comment_cannot_break_out_with_close_sequence() {
+        let payload = "--><script>alert(1)</script>";
+        let node = Element::parse_tag_with_attributes(
+            "",
+            "div",
+            Vec::new(),
+            Vec::new(),
+            "",
+            vec![Node::Comment(payload.to_string()), element("p", vec![Node::from("x")])],
+        );
+        let html = render_to_string(|| node);
+        assert!(
+            !html.contains("--><script"),  // breakout = close-seq immediately followed by script
+            "comment breakout injected a script: {}",
+            html
+        );
+    }
+
+    #[test]
+    fn hydration_script_id_with_quote_does_not_inject_attribute() {
+        let hostile = "\" onmouseover=\"alert(1)";
+        let script = render_hydration_state_script(hostile, "{}");
+        assert!(
+            !script.contains("onmouseover=\"alert"),
+            "script_id broke out of id attribute: {}",
+            script
+        );
+        assert!(script.contains("&quot;"), "quote not escaped: {}", script);
+    }
+
 }
+

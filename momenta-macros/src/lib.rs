@@ -1088,12 +1088,12 @@ impl RsxNode {
                             .unwrap_or(false)
                     }))
                 .then(|| {
-                    let timestamp = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_else(|_| std::time::Duration::from_secs(0))
-                        .as_nanos()
-                        .to_string();
-                    let ident = syn::Ident::new(&format!("attr_data_{}", timestamp), *open_span);
+                    // Use a fixed hygienic local identifier instead of a
+                    // wall-clock timestamp. Proc-macro hygiene gives each
+                    // expansion its own scope, so a fixed name cannot collide
+                    // with user code or sibling expansions. This makes macro
+                    // expansion deterministic (reproducible builds).
+                    let ident = syn::Ident::new("attr_data", *open_span);
                     let data = attrs
                         .clone()
                         .filter(|(name, _, _)| {
