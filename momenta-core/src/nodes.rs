@@ -61,8 +61,58 @@ fn write_escaped_text(text: &str, w: &mut impl core::fmt::Write) -> core::fmt::R
     Ok(())
 }
 
-/// Write a node's HTML to any `fmt::Write` sink (String, Formatter, etc.).
+/// Write an escaped HTML attribute value to any `fmt::Write` sink.
+///
+/// Attribute values are double-quoted in the output, so `"` and `&` must be
+/// escaped to prevent the value from breaking out and injecting a new
+/// attribute. `<` and `>` are escaped too for defense in depth. A hostile
+/// value like `" onmouseover="alert(1)` must remain a single attribute value,
+/// never a new attribute.
 #[inline]
+fn write_escaped_attribute_value(text: &str, w: &mut impl core::fmt::Write) -> core::fmt::Result {
+    if !text
+        .bytes()
+        .any(|b| matches!(b, b'&' | b'"' | b'<' | b'>'))
+    {
+        return w.write_str(text);
+    }
+    for c in text.chars() {
+        match c {
+            '&' => w.write_str("\x26amp;")?,
+            '"' => w.write_str("\x26quot;")?,
+            '<' => w.write_str("\x26lt;")?,
+            '>' => w.write_str("\x26gt;")?,
+            _ => w.write_char(c)?,
+        }
+    }
+    Ok(())
+}
+
+/// Escape comment content so it cannot break out of an HTML comment.
+///
+/// Escape comment content so it cannot break out of an HTML comment.
+///
+/// HTML comment text must not contain `-->` or `--!>`, and the spec forbids
+/// `--` inside comments. Neutralize the close sequences first, then split
+/// any remaining `--` so no comment-closing sequence can form.
+#[inline]
+fn escape_comment_content(comment: &str, w: &mut impl core::fmt::Write) -> core::fmt::Result {
+    let neutralized = comment.replace("--!>", "- -!>").replace("-->", "- ->");
+    let bytes = neutralized.as_bytes();
+    let mut wrote = 0usize;
+    let mut i = 0usize;
+    while i + 1 < bytes.len() {
+        if bytes[i] == b'-' && bytes[i + 1] == b'-' {
+            w.write_str(&neutralized[wrote..i])?;
+            w.write_str("- -")?;
+            i += 2;
+            wrote = i;
+        } else {
+            i += 1;
+        }
+    }
+    w.write_str(&neutralized[wrote..])
+}
 fn write_node_html(node: &Node, w: &mut impl core::fmt::Write) -> core::fmt::Result {
     match node {
         Node::Element(el) => {
@@ -72,7 +122,7 @@ fn write_node_html(node: &Node, w: &mut impl core::fmt::Write) -> core::fmt::Res
                 w.write_str(" ")?;
                 w.write_str(key)?;
                 w.write_str("=\"")?;
-                w.write_str(value)?;
+                write_escaped_attribute_value(value, w)?;
                 w.write_str("\"")?;
             }
             w.write_str(">")?;
@@ -95,7 +145,7 @@ fn write_node_html(node: &Node, w: &mut impl core::fmt::Write) -> core::fmt::Res
         }
         Node::Comment(comment) => {
             w.write_str("<!--")?;
-            w.write_str(comment)?;
+            escape_comment_content(comment, w)?;
             w.write_str("-->")?;
         }
         Node::Static(html) => w.write_str(html)?,
