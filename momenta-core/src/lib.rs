@@ -9,6 +9,8 @@
 //! This is typically not used directly; use the `momenta` crate instead.
 
 extern crate alloc;
+#[cfg(test)]
+extern crate std;
 
 pub mod nodes;
 pub mod signals;

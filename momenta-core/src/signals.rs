@@ -150,6 +150,15 @@ static ISOLATED_RUNTIME_LOCK: Mutex<()> = Mutex::new(());
 /// Fast atomic flag for has_current_scope() — avoids locking RUNTIME just to check.
 static IN_SCOPE: AtomicBool = AtomicBool::new(false);
 
+struct IsolatedRuntimeReset;
+
+impl Drop for IsolatedRuntimeReset {
+    fn drop(&mut self) {
+        *RUNTIME.lock() = RuntimeState::new();
+        IN_SCOPE.store(false, AtomicOrdering::Relaxed);
+    }
+}
+
 pub trait SignalValue: Send {
     fn as_any(&self) -> Option<&dyn Any>;
     fn as_any_mut(&mut self) -> Option<&mut dyn Any>;
@@ -957,13 +966,11 @@ pub fn run_scope_transient(
 
 /// Runs a closure with a freshly reset runtime and clears all runtime state again afterwards.
 pub fn with_isolated_runtime<R>(f: impl FnOnce() -> R) -> R {
-    let _guard = ISOLATED_RUNTIME_LOCK.lock();
+    let _lock = ISOLATED_RUNTIME_LOCK.lock();
     *RUNTIME.lock() = RuntimeState::new();
     IN_SCOPE.store(false, AtomicOrdering::Relaxed);
-    let result = f();
-    *RUNTIME.lock() = RuntimeState::new();
-    IN_SCOPE.store(false, AtomicOrdering::Relaxed);
-    result
+    let _reset = IsolatedRuntimeReset;
+    f()
 }
 
 #[allow(dead_code)]
@@ -1511,5 +1518,46 @@ mod tests {
         assert!(rt.scopes.iter().all(|s| s.is_none()));
         assert!(rt.scope_dependencies.is_empty());
         assert!(rt.signal_dependencies.is_empty());
+    }
+
+    #[test]
+    fn isolated_runtime_clears_global_state_after_panic() {
+        let _guard = TEST_MUTEX.lock();
+        reset_runtime_state();
+
+        let result = std::panic::catch_unwind(|| {
+            with_isolated_runtime(|| {
+                run_scope_transient(
+                    || {
+                        let signal = create_signal(7);
+                        assert!(has_current_scope());
+                        assert_eq!(signal.get(), 7);
+                        panic!("render failed");
+                    },
+                    |_| {},
+                )
+            });
+        });
+
+        assert!(result.is_err());
+        assert!(!has_current_scope());
+        {
+            let rt = RUNTIME.lock();
+            assert!(rt.scopes.is_empty());
+            assert!(rt.scope_dependencies.is_empty());
+            assert!(rt.signal_dependencies.is_empty());
+        }
+
+        let html = with_isolated_runtime(|| {
+            run_scope_transient(
+                || {
+                    let signal = create_signal(8);
+                    Node::from(signal.get())
+                },
+                |_| {},
+            )
+            .to_html()
+        });
+        assert_eq!(html, "8");
     }
 }
