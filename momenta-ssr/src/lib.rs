@@ -7,15 +7,30 @@
 //! - Embedded JSON state blobs for client-side resume
 //! - Thin adapters for Axum, Actix, and Hyper
 
-use core::fmt::{self, Write};
+use core::{
+    cell::Cell,
+    fmt::{self, Write},
+};
 use momenta::{
     nodes::{Component, Element, Node},
-    signals::run_scope_transient,
+    signals::{run_scope_transient, with_isolated_runtime},
 };
 
 pub const HYDRATION_ID_ATTR: &str = "data-momenta-hid";
 pub const HYDRATION_ROOT_ATTR: &str = "data-momenta-root";
 pub const DEFAULT_HYDRATION_STATE_ID: &str = "__MOMENTA_HYDRATION__";
+
+std::thread_local! {
+    static ISOLATED_RUNTIME_DEPTH: Cell<usize> = const { Cell::new(0) };
+}
+
+struct IsolatedRuntimeDepthGuard<'a>(&'a Cell<usize>);
+
+impl Drop for IsolatedRuntimeDepthGuard<'_> {
+    fn drop(&mut self) {
+        self.0.set(self.0.get() - 1);
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RenderOptions {
@@ -221,11 +236,11 @@ pub fn hyper_stream(
     use hyper::body::Frame;
 
     let chunks = render_to_chunks(render, options);
-    let stream = stream::iter(
-        chunks
-            .into_iter()
-            .map(|chunk| Ok::<Frame<Bytes>, Infallible>(Frame::data(Bytes::from(chunk)))),
-    );
+    let frames = chunks
+        .into_iter()
+        .map(|chunk| Ok::<Frame<Bytes>, Infallible>(Frame::data(Bytes::from(chunk))))
+        .collect::<Vec<_>>();
+    let stream = stream::iter(frames);
 
     http::Response::builder()
         .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
@@ -241,10 +256,26 @@ type HyperChunkStream = futures_util::stream::Iter<
 fn render_node(render: impl FnOnce() -> Node + Send + 'static) -> Node {
     let mut render = Some(render);
 
-    run_scope_transient(
-        move || render.take().expect("render closure should only run once")(),
-        |_| {},
-    )
+    ISOLATED_RUNTIME_DEPTH.with(|depth| {
+        let run = || {
+            run_scope_transient(
+                move || render.take().expect("render closure should only run once")(),
+                |_| {},
+            )
+        };
+
+        if depth.get() > 0 {
+            depth.set(depth.get() + 1);
+            let _guard = IsolatedRuntimeDepthGuard(depth);
+            run()
+        } else {
+            with_isolated_runtime(|| {
+                depth.set(1);
+                let _guard = IsolatedRuntimeDepthGuard(depth);
+                run()
+            })
+        }
+    })
 }
 
 fn write_node_to_writer(
@@ -498,7 +529,9 @@ impl ChunkCollector {
 mod tests {
     use super::*;
     use momenta::{nodes::Element, prelude::*};
-    use std::{string::String, vec};
+    use std::{string::String, sync::mpsc, thread, time::Duration, vec};
+
+    const TEST_TIMEOUT: Duration = Duration::from_secs(2);
 
     fn element(tag: &'static str, children: Vec<Node>) -> Node {
         Element::parse_tag_with_attributes("", tag, Vec::new(), Vec::new(), "", children)
@@ -512,6 +545,65 @@ mod tests {
         });
 
         assert_eq!(html, "<div>3</div>");
+    }
+
+    #[test]
+    fn concurrent_renders_use_isolated_runtimes() {
+        let (first_entered_tx, first_entered_rx) = mpsc::channel();
+        let (release_first_tx, release_first_rx) = mpsc::channel();
+        let first = thread::spawn(move || {
+            render_to_string(move || {
+                first_entered_tx.send(()).unwrap();
+                release_first_rx.recv_timeout(TEST_TIMEOUT).unwrap();
+                let signal = create_signal(1);
+                Node::from(signal.get())
+            })
+        });
+        first_entered_rx.recv_timeout(TEST_TIMEOUT).unwrap();
+
+        let (second_started_tx, second_started_rx) = mpsc::channel();
+        let (second_entered_tx, second_entered_rx) = mpsc::channel();
+        let second = thread::spawn(move || {
+            second_started_tx.send(()).unwrap();
+            render_to_string(move || {
+                second_entered_tx.send(()).unwrap();
+                let signal = create_signal(2);
+                Node::from(signal.get())
+            })
+        });
+        second_started_rx.recv_timeout(TEST_TIMEOUT).unwrap();
+
+        assert!(matches!(
+            second_entered_rx.recv_timeout(Duration::from_millis(100)),
+            Err(mpsc::RecvTimeoutError::Timeout)
+        ));
+        release_first_tx.send(()).unwrap();
+        second_entered_rx.recv_timeout(TEST_TIMEOUT).unwrap();
+
+        assert_eq!(first.join().unwrap(), "1");
+        assert_eq!(second.join().unwrap(), "2");
+    }
+
+    #[test]
+    fn nested_renders_reuse_the_owned_runtime() {
+        let (result_tx, result_rx) = mpsc::channel();
+        let handle = thread::spawn(move || {
+            let html = render_to_string(|| {
+                let outer = create_signal(1);
+                let inner = render_to_string(|| {
+                    let inner = create_signal(2);
+                    Node::from(inner.get())
+                });
+                element("div", vec![Node::from(outer.get()), Node::from(inner)])
+            });
+            result_tx.send(html).unwrap();
+        });
+
+        assert_eq!(
+            result_rx.recv_timeout(TEST_TIMEOUT).unwrap(),
+            "<div>12</div>"
+        );
+        handle.join().unwrap();
     }
 
     #[test]
@@ -583,5 +675,26 @@ mod tests {
             script,
             "<script id=\"state\" type=\"application/json\">\\u003c/script\\u003e\\u003cdiv\\u003e</script>"
         );
+    }
+
+    #[cfg(feature = "hyper")]
+    #[test]
+    fn hyper_stream_body_contains_rendered_chunks() {
+        use futures_util::FutureExt;
+        use http_body_util::BodyExt;
+
+        let response = hyper_stream(
+            || element("p", vec![Node::from("Hello")]),
+            RenderOptions { chunk_size: 2 },
+        );
+        let body = response
+            .into_body()
+            .collect()
+            .now_or_never()
+            .expect("in-memory stream should be ready")
+            .unwrap()
+            .to_bytes();
+
+        assert_eq!(body, "<p>Hello</p>");
     }
 }
