@@ -10,7 +10,7 @@
 use core::fmt::{self, Write};
 use momenta::{
     nodes::{Component, Element, Node},
-    signals::run_scope_transient,
+    signals::{run_scope_transient, with_isolated_runtime},
 };
 
 pub const HYDRATION_ID_ATTR: &str = "data-momenta-hid";
@@ -221,11 +221,11 @@ pub fn hyper_stream(
     use hyper::body::Frame;
 
     let chunks = render_to_chunks(render, options);
-    let stream = stream::iter(
-        chunks
-            .into_iter()
-            .map(|chunk| Ok::<Frame<Bytes>, Infallible>(Frame::data(Bytes::from(chunk)))),
-    );
+    let frames = chunks
+        .into_iter()
+        .map(|chunk| Ok::<Frame<Bytes>, Infallible>(Frame::data(Bytes::from(chunk))))
+        .collect::<Vec<_>>();
+    let stream = stream::iter(frames);
 
     http::Response::builder()
         .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
@@ -241,10 +241,12 @@ type HyperChunkStream = futures_util::stream::Iter<
 fn render_node(render: impl FnOnce() -> Node + Send + 'static) -> Node {
     let mut render = Some(render);
 
-    run_scope_transient(
-        move || render.take().expect("render closure should only run once")(),
-        |_| {},
-    )
+    with_isolated_runtime(|| {
+        run_scope_transient(
+            move || render.take().expect("render closure should only run once")(),
+            |_| {},
+        )
+    })
 }
 
 fn write_node_to_writer(
@@ -498,7 +500,16 @@ impl ChunkCollector {
 mod tests {
     use super::*;
     use momenta::{nodes::Element, prelude::*};
-    use std::{string::String, vec};
+    use std::{
+        string::String,
+        sync::{
+            Arc, Barrier,
+            atomic::{AtomicUsize, Ordering},
+        },
+        thread,
+        time::Duration,
+        vec,
+    };
 
     fn element(tag: &'static str, children: Vec<Node>) -> Node {
         Element::parse_tag_with_attributes("", tag, Vec::new(), Vec::new(), "", children)
@@ -512,6 +523,40 @@ mod tests {
         });
 
         assert_eq!(html, "<div>3</div>");
+    }
+
+    #[test]
+    fn concurrent_renders_use_isolated_runtimes() {
+        const THREADS: usize = 16;
+
+        let start = Arc::new(Barrier::new(THREADS));
+        let active = Arc::new(AtomicUsize::new(0));
+        let max_active = Arc::new(AtomicUsize::new(0));
+        let handles = (0..THREADS)
+            .map(|value| {
+                let start = Arc::clone(&start);
+                let active = Arc::clone(&active);
+                let max_active = Arc::clone(&max_active);
+
+                thread::spawn(move || {
+                    start.wait();
+                    render_to_string(move || {
+                        let current = active.fetch_add(1, Ordering::SeqCst) + 1;
+                        max_active.fetch_max(current, Ordering::SeqCst);
+                        thread::sleep(Duration::from_millis(2));
+                        let signal = create_signal(value as i32);
+                        let node = Node::from(signal.get());
+                        active.fetch_sub(1, Ordering::SeqCst);
+                        node
+                    })
+                })
+            })
+            .collect::<Vec<_>>();
+
+        for (value, handle) in handles.into_iter().enumerate() {
+            assert_eq!(handle.join().unwrap(), value.to_string());
+        }
+        assert_eq!(max_active.load(Ordering::SeqCst), 1);
     }
 
     #[test]
@@ -583,5 +628,26 @@ mod tests {
             script,
             "<script id=\"state\" type=\"application/json\">\\u003c/script\\u003e\\u003cdiv\\u003e</script>"
         );
+    }
+
+    #[cfg(feature = "hyper")]
+    #[test]
+    fn hyper_stream_body_contains_rendered_chunks() {
+        use futures_util::FutureExt;
+        use http_body_util::BodyExt;
+
+        let response = hyper_stream(
+            || element("p", vec![Node::from("Hello")]),
+            RenderOptions { chunk_size: 2 },
+        );
+        let body = response
+            .into_body()
+            .collect()
+            .now_or_never()
+            .expect("in-memory stream should be ready")
+            .unwrap()
+            .to_bytes();
+
+        assert_eq!(body, "<p>Hello</p>");
     }
 }
