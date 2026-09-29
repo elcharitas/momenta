@@ -12,7 +12,8 @@ documentation = "https://docs.rs/momenta-router"
 
 [dependencies]
 momenta = { path = "../momenta", version = "0.3.3", default-features = false }
-path-tree = "0.8.3"
+smallvec = "1.15"
+
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 web-sys = { version = "0.3", features = ["Window", "Document", "Location", "History", "Event", "PopStateEvent", "EventTarget", "Element", "HtmlAnchorElement", "MouseEvent", "Node"] }
 wasm-bindgen = "0.2"

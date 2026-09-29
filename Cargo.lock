@@ -946,7 +946,7 @@ name = "momenta-router"
 version = "0.3.3"
 dependencies = [
  "momenta",
- "path-tree",
+ "smallvec",
  "wasm-bindgen",
  "web-sys",
 ]
@@ -1027,15 +1027,6 @@ name = "paste"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
-
-[[package]]
-name = "path-tree"
-version = "0.8.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c2a97453bc21a968f722df730bfe11bd08745cb50d1300b0df2bda131dece136"
-dependencies = [
- "smallvec",
-]
 
 [[package]]
 name = "percent-encoding"
