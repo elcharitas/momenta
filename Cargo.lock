@@ -945,8 +945,8 @@ dependencies = [
 name = "momenta-router"
 version = "0.3.3"
 dependencies = [
- "matchit",
  "momenta",
+ "smallvec",
  "wasm-bindgen",
  "web-sys",
 ]
