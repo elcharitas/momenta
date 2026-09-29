@@ -15,7 +15,8 @@ use wasm_bindgen::prelude::*;
 #[cfg(target_arch = "wasm32")]
 use web_sys::{Event, MouseEvent};
 
-pub use matchit::Router;
+mod matcher;
+pub use matcher::{InsertError, Match, MatchError, Params, Router};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum RouterMode {
