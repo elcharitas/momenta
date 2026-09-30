@@ -492,6 +492,10 @@ pub fn derive_signal_value(input: TokenStream) -> TokenStream {
             fn as_any(&self) -> Option<&dyn core::any::Any> {
                 Some(self)
             }
+
+            fn as_any_mut(&mut self) -> Option<&mut dyn core::any::Any> {
+                Some(self)
+            }
         }
     };
     expanded.into()
@@ -729,7 +733,8 @@ impl Parse for RsxNode {
                     .collect();
 
                 // Build a binary expression tree with the + operator
-                let mut result = syn::parse_str::<Expr>("String::new()").unwrap();
+                let mut result =
+                    syn::parse_str::<Expr>("::momenta::__alloc::string::String::new()").unwrap();
 
                 for expr in exprs.into_iter() {
                     result = Expr::Binary(syn::ExprBinary {
@@ -1031,7 +1036,7 @@ impl RsxNode {
                                     type Props = <#component as ::momenta::nodes::Component>::Props;
                                     ::momenta::dom::component::<#component>(
                                         Props {
-                                            children: vec![#(#child_tokens),*],
+                                            children: ::momenta::__alloc::vec![#(#child_tokens),*],
                                             ..Default::default()
                                         }
                                     )
@@ -1048,10 +1053,10 @@ impl RsxNode {
                                 ::momenta::nodes::Element::parse_tag_with_attributes(
                                     "",
                                     #tag_str,
-                                    vec![],
-                                    vec![],
+                                    ::momenta::__alloc::vec![],
+                                    ::momenta::__alloc::vec![],
                                     "",
-                                    vec![#(#child_tokens),*],
+                                    ::momenta::__alloc::vec![#(#child_tokens),*],
                                 )
                             }
                             #[cfg(target_arch = "wasm32")]
@@ -1059,7 +1064,7 @@ impl RsxNode {
                                 type Props = <#component as ::momenta::nodes::Component>::Props;
                                 ::momenta::dom::component::<#component>(
                                     Props {
-                                        children: vec![#(#child_tokens),*],
+                                        children: ::momenta::__alloc::vec![#(#child_tokens),*],
                                         ..Default::default()
                                     }
                                 )
@@ -1105,13 +1110,13 @@ impl RsxNode {
                             quote_spanned! {span=>
                                 {
                                     let #name = #value;
-                                    #ident.push((stringify!(#name).to_string(), #name.value()));
+                                    #ident.push((::momenta::__alloc::string::ToString::to_string(stringify!(#name)), #name.value()));
                                 }
                             }
                         });
                     quote_spanned! { *open_span=>
                         data_: {
-                            let mut #ident = vec![];
+                            let mut #ident = ::momenta::__alloc::vec![];
                             {
                                 #[allow(unused)]
                                 use ::momenta::nodes::Attribute;
@@ -1141,7 +1146,7 @@ impl RsxNode {
                 let children_tokens = if !children.is_empty() || is_element {
                     let child_tokens = children.iter().map(|child| child.to_tokens());
                     Some(quote_spanned! { *open_span=>
-                        children: vec![#(#child_tokens),*],
+                        children: ::momenta::__alloc::vec![#(#child_tokens),*],
                     })
                 } else {
                     None
@@ -1195,7 +1200,7 @@ impl RsxNode {
 
                 quote! {
                     {
-                        ::momenta::nodes::Node::Fragment(vec![#(#children_tokens),*])
+                        ::momenta::nodes::Node::Fragment(::momenta::__alloc::vec![#(#children_tokens),*])
                     }
                 }
             }

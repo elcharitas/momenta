@@ -31,5 +31,5 @@ web-sys = { version = "0.3", optional = true, features = [
 ] }
 
 [features]
-default = ["wasm"]
+default = []
 wasm = ["momenta-core/wasm", "wasm-bindgen", "wasm-bindgen-futures", "web-sys"]

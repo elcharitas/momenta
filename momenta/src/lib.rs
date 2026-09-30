@@ -18,7 +18,7 @@
 //! - **Type Safety**: Get compile-time checks for your components and props
 //! - **Zero Runtime Overhead**: All the magic happens at compile time
 //! - **Familiar Patterns**: Components, props, fragments - all the React concepts you love
-//! - **No-std Support**: Works in embedded and resource-constrained environments
+//! - **No-std Support**: Requires `alloc` and a global allocator
 //!
 //! # Let's Get Started!
 //!
@@ -163,13 +163,13 @@
 //! ```
 //!
 
-extern crate alloc;
+#[doc(hidden)]
+pub extern crate alloc as __alloc;
 
 // Re-export core types
 pub use momenta_core::{nodes, signals};
 
-// Re-export DOM functionality when available
-#[cfg(feature = "dom")]
+// RSX uses the portable element and component definitions.
 pub use momenta_dom as dom;
 
 pub use paste::paste;

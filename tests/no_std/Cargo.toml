@@ -1,0 +1,11 @@
+[package]
+name = "momenta-no-std-check"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+momenta = { path = "../../momenta", default-features = false }
+momenta-router = { path = "../../momenta-router" }

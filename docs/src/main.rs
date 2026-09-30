@@ -5,7 +5,6 @@ extern crate alloc;
 mod components;
 mod pages;
 
-use alloc::vec;
 use components::*;
 use momenta::prelude::*;
 use momenta_router::{RouterContext, RouterMode, routes};
