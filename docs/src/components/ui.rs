@@ -1,5 +1,5 @@
 use crate::{components::highlightAll, pages::CounterExample};
-use alloc::{format, vec, vec::Vec};
+use alloc::{format, vec::Vec};
 use momenta::prelude::*;
 
 pub struct CodeBlockProps {

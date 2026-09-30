@@ -55,7 +55,7 @@ Add Momenta to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-momenta = "0.2"
+momenta = { version = "0.3.5", features = ["wasm"] }
 ```
 
 Create your first component:
@@ -172,20 +172,40 @@ Enable optional features in your `Cargo.toml`:
 
 ```toml
 [dependencies]
-momenta = { version = "0.2", features = ["full-reactivity"] }
+momenta = { version = "0.3.5", features = ["wasm"] }
 ```
 
 Available features:
-- `dom` - All HTML elements with DOM rendering (default)
-- `wasm` - WebAssembly support for browser rendering (default)
+- `dom` - Compatibility feature; HTML elements are always available
+- `wasm` - Browser DOM rendering (opt in)
 - `computed` - Computed signals support
 - `memoization` - Memoization utilities
 - `full-reactivity` - All reactive features (includes computed + memoization, default)
 
-For server-side rendering without DOM, use `momenta-ssr`:
+### Bare-metal `no_std`
+
+The default features and `default-features = false` both build for
+`thumbv7m-none-eabi`. Browser applications must opt into `wasm`. A bare-metal
+application can use `rsx!`, components, signals, and `momenta-router` without
+that feature:
+
 ```toml
 [dependencies]
-momenta-ssr = "0.2"
+momenta = { version = "0.3.5", default-features = false }
+momenta-router = "0.3.5"
+```
+
+Momenta uses `alloc` for dynamic nodes and reactive state. The application must
+provide a global allocator and a panic handler. Run signal operations in the
+foreground context: the global runtime uses a spin lock and is not safe to
+call from an interrupt that can preempt another signal operation. The
+`tests/no_std` fixture links a bare-metal image. The `momenta-ssr` crate
+requires `std`.
+
+For server-side rendering without browser DOM, use `momenta-ssr`:
+```toml
+[dependencies]
+momenta-ssr = "0.3.5"
 ```
 
 Basic SSR usage:
@@ -257,7 +277,7 @@ Enable only the adapter feature you need:
 
 ```toml
 [dependencies]
-momenta-ssr = { version = "0.2", features = ["axum"] }
+momenta-ssr = { version = "0.3.5", features = ["axum"] }
 ```
 
 ## Comparison with Other Frameworks

@@ -13,8 +13,8 @@ documentation = "https://docs.rs/momenta"
 [dependencies]
 paste = "1.0"
 momenta-macros = { path = "../momenta-macros", version = "0.3.4" }
-momenta-core = { path = "../momenta-core", version = "0.3.4" }
-momenta-dom = { path = "../momenta-dom", version = "0.3.4", optional = true, default-features = false }
+momenta-core = { path = "../momenta-core", version = "0.3.4", default-features = false }
+momenta-dom = { path = "../momenta-dom", version = "0.3.4", default-features = false }
 wasm-bindgen = { version = "0.2", optional = true }
 wasm-bindgen-futures = { version = "0.4", optional = true }
 web-sys = { version = "0.3", optional = true, features = [
@@ -30,9 +30,9 @@ web-sys = { version = "0.3", optional = true, features = [
 ] }
 
 [features]
-default = ["dom", "full-reactivity", "wasm"]
-wasm = ["momenta-dom?/wasm", "wasm-bindgen", "wasm-bindgen-futures", "web-sys"]
-dom = ["momenta-dom"]
+default = ["full-reactivity"]
+wasm = ["dom", "momenta-dom/wasm", "wasm-bindgen", "wasm-bindgen-futures", "web-sys"]
+dom = []
 computed = ["momenta-core/computed"]
 memoization = ["momenta-core/memoization"]
 full-reactivity = ["momenta-core/full-reactivity"]
