@@ -75,7 +75,7 @@ checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
 name = "momenta"
-version = "0.3.4"
+version = "0.3.5"
 dependencies = [
  "momenta-core",
  "momenta-dom",
@@ -85,7 +85,7 @@ dependencies = [
 
 [[package]]
 name = "momenta-core"
-version = "0.3.4"
+version = "0.3.5"
 dependencies = [
  "momenta-macros",
  "paste",
@@ -94,7 +94,7 @@ dependencies = [
 
 [[package]]
 name = "momenta-dom"
-version = "0.3.4"
+version = "0.3.5"
 dependencies = [
  "momenta-core",
  "momenta-macros",
@@ -103,7 +103,7 @@ dependencies = [
 
 [[package]]
 name = "momenta-macros"
-version = "0.3.4"
+version = "0.3.5"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -121,7 +121,7 @@ dependencies = [
 
 [[package]]
 name = "momenta-router"
-version = "0.3.4"
+version = "0.3.5"
 dependencies = [
  "momenta",
  "smallvec",
